@@ -2,7 +2,7 @@
   "name": "run-my-tasks",
   "displayName": "Run My Tasks",
   "description": "Quickly run workspace tasks from a status bar picker or side panel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "publisher": "RiccardoFilippozzi",
   "repository": "https://github.com/riccardoflp/run-my-tasks",
@@ -10,8 +10,15 @@
     "vscode": "^1.90.0"
   },
   "icon": "resources/icon.png",
-  "categories": ["Other"],
-  "keywords": ["tasks", "task runner", "build", "status bar"],
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "tasks",
+    "task runner",
+    "build",
+    "status bar"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -171,7 +178,10 @@
       "properties": {
         "runMyTasks.statusBarAlignment": {
           "type": "string",
-          "enum": ["left", "right"],
+          "enum": [
+            "left",
+            "right"
+          ],
           "default": "left",
           "description": "Which side of the status bar to place the task runner button."
         },
