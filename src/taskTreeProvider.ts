@@ -46,10 +46,20 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private cachedTasks: vscode.Task[] | null = null;
+  private pendingStop = new Set<string>();
 
   refresh(): void {
     this.cachedTasks = null;
     this._onDidChangeTreeData.fire();
+  }
+
+  markStopped(taskName: string): void {
+    this.pendingStop.add(taskName);
+    this.refresh();
+  }
+
+  clearStopped(taskName: string): void {
+    this.pendingStop.delete(taskName);
   }
 
   getTreeItem(element: TreeNode): vscode.TreeItem {
@@ -65,7 +75,11 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       }
     }
 
-    const runningNames = new Set(vscode.tasks.taskExecutions.map(e => e.task.name));
+    const runningNames = new Set(
+      vscode.tasks.taskExecutions
+        .filter(e => !this.pendingStop.has(e.task.name))
+        .map(e => e.task.name),
+    );
 
     if (!element) {
       return this.buildGroups(this.cachedTasks, runningNames);

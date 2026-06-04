@@ -22,7 +22,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // Refresh tree on task lifecycle events
   context.subscriptions.push(
     vscode.tasks.onDidStartTask(() => treeProvider.refresh()),
-    vscode.tasks.onDidEndTask(() => treeProvider.refresh()),
+    vscode.tasks.onDidEndTask(e => {
+      treeProvider.clearStopped(e.execution.task.name);
+      treeProvider.refresh();
+    }),
   );
 
   // Refresh button in view title
@@ -44,6 +47,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('run-my-tasks.stopTaskFromTree', (item: TaskTreeItem) => {
       const execution = vscode.tasks.taskExecutions.find(e => e.task.name === item.task.name);
       if (execution) {
+        treeProvider.markStopped(item.task.name);
         execution.terminate();
       }
     }),
