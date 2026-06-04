@@ -61,6 +61,7 @@
       {
         "command": "run-my-tasks.createGroup",
         "title": "Create Group",
+        "icon": "$(add)",
         "category": "Run My Tasks"
       },
       {
@@ -102,6 +103,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "run-my-tasks.createGroup",
+          "when": "view == run-my-tasks.tasksView",
+          "group": "navigation"
+        },
         {
           "command": "run-my-tasks.refreshTasksView",
           "when": "view == run-my-tasks.tasksView",
