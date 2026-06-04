@@ -1,0 +1,125 @@
+{
+  "name": "run-my-tasks",
+  "displayName": "Run My Tasks",
+  "description": "Quickly run workspace tasks from a status bar picker or side panel",
+  "version": "0.1.0",
+  "license": "MIT",
+  "publisher": "RiccardoFilippozzi",
+  "repository": "https://gitlab.com/vscode_ext/run-my-tasks",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "icon": "resources/icon.png",
+  "categories": ["Other"],
+  "keywords": ["tasks", "task runner", "build", "status bar"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "run-my-tasks-container",
+          "title": "Run My Tasks",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "run-my-tasks-container": [
+        {
+          "id": "run-my-tasks.tasksView",
+          "name": "Tasks"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "run-my-tasks.showTaskPicker",
+        "title": "Run Task...",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.refreshTasksView",
+        "title": "Refresh",
+        "icon": "$(refresh)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.runTaskFromTree",
+        "title": "Run Task",
+        "icon": "$(run)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.stopTaskFromTree",
+        "title": "Stop Task",
+        "icon": "$(stop)",
+        "category": "Run My Tasks"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "run-my-tasks.showTaskPicker",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "workspaceFolderCount > 0"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "run-my-tasks.refreshTasksView",
+          "when": "view == run-my-tasks.tasksView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "run-my-tasks.runTaskFromTree",
+          "when": "view == run-my-tasks.tasksView && viewItem == idleTask",
+          "group": "inline"
+        },
+        {
+          "command": "run-my-tasks.stopTaskFromTree",
+          "when": "view == run-my-tasks.tasksView && viewItem == runningTask",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Run My Tasks",
+      "properties": {
+        "runMyTasks.statusBarAlignment": {
+          "type": "string",
+          "enum": ["left", "right"],
+          "default": "left",
+          "description": "Which side of the status bar to place the task runner button."
+        },
+        "runMyTasks.statusBarPriority": {
+          "type": "number",
+          "default": 100,
+          "description": "Priority of the status bar item. Higher numbers appear further left (for Left alignment)."
+        },
+        "runMyTasks.showTaskType": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the task source and command as detail lines in the picker."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.0",
+    "@vscode/vsce": "^3.0.0"
+  }
+}

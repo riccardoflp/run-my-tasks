@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <mask id="cutout">
+      <path d="M4.29,2.77 L11.71,7.23 Q13,8 11.71,8.77 L4.29,13.23 Q3,14 3,12.5 L3,3.5 Q3,2 4.29,2.77 Z" fill="white"/>
+      <text x="6.5" y="8" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-size="2.6" font-weight="bold" fill="black" letter-spacing="0.15">RUN</text>
+    </mask>
+  </defs>
+  <path d="M4.29,2.77 L11.71,7.23 Q13,8 11.71,8.77 L4.29,13.23 Q3,14 3,12.5 L3,3.5 Q3,2 4.29,2.77 Z"
+        fill="currentColor" mask="url(#cutout)"/>
+</svg>
