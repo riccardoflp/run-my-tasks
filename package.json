@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "license": "MIT",
   "publisher": "RiccardoFilippozzi",
-  "repository": "https://gitlab.com/vscode_ext/run-my-tasks",
+  "repository": "https://github.com/riccardoflp/run-my-tasks",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -57,6 +57,39 @@
         "title": "Stop Task",
         "icon": "$(stop)",
         "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.createGroup",
+        "title": "Create Group",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.deleteGroup",
+        "title": "Delete Group",
+        "icon": "$(trash)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.addTaskToGroup",
+        "title": "Add to Group",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.removeTaskFromGroup",
+        "title": "Remove from Group",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.runGroup",
+        "title": "Run Group",
+        "icon": "$(run-all)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.stopGroup",
+        "title": "Stop Group",
+        "icon": "$(debug-stop)",
+        "category": "Run My Tasks"
       }
     ],
     "keybindings": [
@@ -85,6 +118,36 @@
           "command": "run-my-tasks.stopTaskFromTree",
           "when": "view == run-my-tasks.tasksView && viewItem == runningTask",
           "group": "inline"
+        },
+        {
+          "command": "run-my-tasks.stopTaskFromTree",
+          "when": "view == run-my-tasks.tasksView && viewItem == runningTaskInGroup",
+          "group": "inline"
+        },
+        {
+          "command": "run-my-tasks.runGroup",
+          "when": "view == run-my-tasks.tasksView && viewItem == virtualGroup",
+          "group": "inline@1"
+        },
+        {
+          "command": "run-my-tasks.stopGroup",
+          "when": "view == run-my-tasks.tasksView && viewItem == virtualGroup",
+          "group": "inline@2"
+        },
+        {
+          "command": "run-my-tasks.deleteGroup",
+          "when": "view == run-my-tasks.tasksView && viewItem == virtualGroup",
+          "group": "inline@3"
+        },
+        {
+          "command": "run-my-tasks.addTaskToGroup",
+          "when": "view == run-my-tasks.tasksView && (viewItem == idleTask || viewItem == runningTask)",
+          "group": "1_group"
+        },
+        {
+          "command": "run-my-tasks.removeTaskFromGroup",
+          "when": "view == run-my-tasks.tasksView && (viewItem == idleTaskInGroup || viewItem == runningTaskInGroup)",
+          "group": "1_group"
         }
       ]
     },
