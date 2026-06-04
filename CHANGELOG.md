@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Virtual groups: create named groups, assign tasks to them, and run or stop all tasks in a group at once via inline buttons or command palette
+- Side panel split into two sections: **Groups** (virtual groups and their tasks) and **Tasks** (all workspace tasks by source)
 
 ### Fixed
 

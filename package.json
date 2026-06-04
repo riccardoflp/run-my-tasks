@@ -29,6 +29,10 @@
     "views": {
       "run-my-tasks-container": [
         {
+          "id": "run-my-tasks.groupsView",
+          "name": "Groups"
+        },
+        {
           "id": "run-my-tasks.tasksView",
           "name": "Tasks"
         }
@@ -105,12 +109,12 @@
       "view/title": [
         {
           "command": "run-my-tasks.createGroup",
-          "when": "view == run-my-tasks.tasksView",
+          "when": "view == run-my-tasks.groupsView",
           "group": "navigation"
         },
         {
           "command": "run-my-tasks.refreshTasksView",
-          "when": "view == run-my-tasks.tasksView",
+          "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView",
           "group": "navigation"
         }
       ],
@@ -126,23 +130,28 @@
           "group": "inline"
         },
         {
+          "command": "run-my-tasks.runTaskFromTree",
+          "when": "view == run-my-tasks.groupsView && viewItem == idleTaskInGroup",
+          "group": "inline"
+        },
+        {
           "command": "run-my-tasks.stopTaskFromTree",
-          "when": "view == run-my-tasks.tasksView && viewItem == runningTaskInGroup",
+          "when": "view == run-my-tasks.groupsView && viewItem == runningTaskInGroup",
           "group": "inline"
         },
         {
           "command": "run-my-tasks.runGroup",
-          "when": "view == run-my-tasks.tasksView && viewItem == virtualGroup",
+          "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
           "group": "inline@1"
         },
         {
           "command": "run-my-tasks.stopGroup",
-          "when": "view == run-my-tasks.tasksView && viewItem == virtualGroup",
+          "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
           "group": "inline@2"
         },
         {
           "command": "run-my-tasks.deleteGroup",
-          "when": "view == run-my-tasks.tasksView && viewItem == virtualGroup",
+          "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
           "group": "inline@3"
         },
         {
@@ -152,7 +161,7 @@
         },
         {
           "command": "run-my-tasks.removeTaskFromGroup",
-          "when": "view == run-my-tasks.tasksView && (viewItem == idleTaskInGroup || viewItem == runningTaskInGroup)",
+          "when": "view == run-my-tasks.groupsView && (viewItem == idleTaskInGroup || viewItem == runningTaskInGroup)",
           "group": "1_group"
         }
       ]

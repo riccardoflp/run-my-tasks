@@ -1,7 +1,14 @@
 import * as vscode from 'vscode';
 import { createStatusBarItem } from './statusBar';
 import { showTaskPicker } from './taskPicker';
-import { TaskTreeItem, TaskTreeProvider, VirtualGroup, VirtualGroupItem } from './taskTreeProvider';
+import {
+  createSharedState,
+  GroupsTreeProvider,
+  TasksTreeProvider,
+  TaskTreeItem,
+  VirtualGroup,
+  VirtualGroupItem,
+} from './taskTreeProvider';
 
 const GROUPS_KEY = 'virtualGroups';
 
@@ -13,37 +20,63 @@ export function activate(context: vscode.ExtensionContext): void {
 
   createStatusBarItem(context);
 
-  // Side panel tree view
-  const treeProvider = new TaskTreeProvider();
-  const treeView = vscode.window.createTreeView('run-my-tasks.tasksView', {
-    treeDataProvider: treeProvider,
-    showCollapseAll: false,
-  });
-  context.subscriptions.push(treeView);
+  // Side panel tree views
+  const shared = createSharedState();
+  const groupsProvider = new GroupsTreeProvider(shared);
+  const tasksProvider = new TasksTreeProvider(shared);
+
+  context.subscriptions.push(
+    vscode.window.createTreeView('run-my-tasks.groupsView', {
+      treeDataProvider: groupsProvider,
+      showCollapseAll: false,
+    }),
+    vscode.window.createTreeView('run-my-tasks.tasksView', {
+      treeDataProvider: tasksProvider,
+      showCollapseAll: false,
+    }),
+  );
+
+  const refreshAll = (): void => {
+    shared.cachedTasks = null;
+    groupsProvider.refresh();
+    tasksProvider.refresh();
+  };
+
+  const markStopped = (name: string): void => {
+    shared.pendingStop.add(name);
+    groupsProvider.refresh();
+    tasksProvider.refresh();
+  };
+
+  const clearStopped = (name: string): void => {
+    shared.pendingStop.delete(name);
+  };
 
   // Load persisted groups on startup
-  treeProvider.setVirtualGroups(context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []));
+  shared.virtualGroups = context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
+  groupsProvider.refresh();
 
   const loadGroups = (): VirtualGroup[] =>
     context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
 
   const saveGroups = async (groups: VirtualGroup[]): Promise<void> => {
     await context.workspaceState.update(GROUPS_KEY, groups);
-    treeProvider.setVirtualGroups(groups);
+    shared.virtualGroups = groups;
+    groupsProvider.refresh();
   };
 
-  // Refresh tree on task lifecycle events
+  // Refresh both views on task lifecycle events
   context.subscriptions.push(
-    vscode.tasks.onDidStartTask(() => treeProvider.refresh()),
+    vscode.tasks.onDidStartTask(() => refreshAll()),
     vscode.tasks.onDidEndTask(e => {
-      treeProvider.clearStopped(e.execution.task.name);
-      treeProvider.refresh();
+      clearStopped(e.execution.task.name);
+      refreshAll();
     }),
   );
 
   // Refresh button in view title
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.refreshTasksView', () => treeProvider.refresh()),
+    vscode.commands.registerCommand('run-my-tasks.refreshTasksView', () => refreshAll()),
   );
 
   // Run inline button / click on idle task
@@ -60,7 +93,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('run-my-tasks.stopTaskFromTree', (item: TaskTreeItem) => {
       const execution = vscode.tasks.taskExecutions.find(e => e.task.name === item.task.name);
       if (execution) {
-        treeProvider.markStopped(item.task.name);
+        markStopped(item.task.name);
         execution.terminate();
       }
     }),
@@ -249,7 +282,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
       for (const execution of vscode.tasks.taskExecutions) {
         if (group.tasks.includes(execution.task.name)) {
-          treeProvider.markStopped(execution.task.name);
+          markStopped(execution.task.name);
           execution.terminate();
         }
       }
