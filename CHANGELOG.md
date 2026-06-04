@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Virtual groups: create named groups, assign tasks to them, and run or stop all tasks in a group at once via inline buttons or command palette
+
 ### Fixed
 
 - Task stayed in a running state in the activity bar after being stopped via the stop inline action
@@ -17,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Status bar button to open a quick-pick task launcher (`Ctrl+Shift+T` / `Cmd+Shift+T`)
 - Activity bar side panel listing all workspace tasks with run/stop inline actions
-- Task grouping: create named virtual groups, add/remove tasks, run or stop the entire group at once
 - Refresh button in the Tasks panel to reload the task list
 - `runMyTasks.statusBarAlignment` setting to place the button on the left or right side of the status bar
 - `runMyTasks.statusBarPriority` setting to control the button position within its alignment group

@@ -1,5 +1,22 @@
 import * as vscode from 'vscode';
 
+export interface VirtualGroup {
+  name: string;
+  tasks: string[];
+}
+
+export class VirtualGroupItem extends vscode.TreeItem {
+  constructor(
+    public readonly group: VirtualGroup,
+    runningCount: number,
+  ) {
+    super(group.name, vscode.TreeItemCollapsibleState.Expanded);
+    this.iconPath = new vscode.ThemeIcon('layers');
+    this.description = runningCount > 0 ? `${runningCount} running` : undefined;
+    this.contextValue = 'virtualGroup';
+  }
+}
+
 export class TaskGroupItem extends vscode.TreeItem {
   constructor(
     public readonly source: string,
@@ -20,6 +37,7 @@ export class TaskTreeItem extends vscode.TreeItem {
   constructor(
     public readonly task: vscode.Task,
     public readonly running: boolean,
+    public readonly groupName?: string,
   ) {
     super(task.name, vscode.TreeItemCollapsibleState.None);
     this.tooltip = running ? `${task.name} (running)` : task.name;
@@ -27,7 +45,8 @@ export class TaskTreeItem extends vscode.TreeItem {
       running ? 'loading~spin' : 'circle-outline',
       running ? new vscode.ThemeColor('charts.green') : undefined,
     );
-    this.contextValue = running ? 'runningTask' : 'idleTask';
+    const base = running ? 'runningTask' : 'idleTask';
+    this.contextValue = groupName ? `${base}InGroup` : base;
 
     if (!running) {
       this.command = {
@@ -39,7 +58,7 @@ export class TaskTreeItem extends vscode.TreeItem {
   }
 }
 
-type TreeNode = TaskGroupItem | TaskTreeItem;
+type TreeNode = VirtualGroupItem | TaskGroupItem | TaskTreeItem;
 
 export class TaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | undefined | null | void>();
@@ -47,6 +66,7 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   private cachedTasks: vscode.Task[] | null = null;
   private pendingStop = new Set<string>();
+  private virtualGroups: VirtualGroup[] = [];
 
   refresh(): void {
     this.cachedTasks = null;
@@ -60,6 +80,11 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   clearStopped(taskName: string): void {
     this.pendingStop.delete(taskName);
+  }
+
+  setVirtualGroups(groups: VirtualGroup[]): void {
+    this.virtualGroups = groups;
+    this.refresh();
   }
 
   getTreeItem(element: TreeNode): vscode.TreeItem {
@@ -82,7 +107,18 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     );
 
     if (!element) {
-      return this.buildGroups(this.cachedTasks, runningNames);
+      const virtualItems = this.virtualGroups.map(g => {
+        const count = g.tasks.filter(t => runningNames.has(t)).length;
+        return new VirtualGroupItem(g, count);
+      });
+      return [...virtualItems, ...this.buildGroups(this.cachedTasks, runningNames)];
+    }
+
+    if (element instanceof VirtualGroupItem) {
+      const groupTasks = this.cachedTasks.filter(t =>
+        element.group.tasks.includes(t.name),
+      );
+      return this.buildTaskItems(groupTasks, runningNames, element.group.name);
     }
 
     if (element instanceof TaskGroupItem) {
@@ -96,16 +132,6 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   private buildGroups(tasks: vscode.Task[], runningNames: Set<string>): TaskGroupItem[] {
-    const sourceCounts = new Map<string, number>();
-    for (const t of tasks) {
-      const running = runningNames.has(t.name) ? 1 : 0;
-      sourceCounts.set(t.source, (sourceCounts.get(t.source) ?? 0) + running);
-      if (!sourceCounts.has(t.source)) {
-        sourceCounts.set(t.source, 0);
-      }
-    }
-
-    // Collect unique sources, counting running tasks per group
     const groups = new Map<string, number>();
     for (const t of tasks) {
       const prev = groups.get(t.source) ?? 0;
@@ -121,9 +147,9 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     return sorted.map(source => new TaskGroupItem(source, groups.get(source) ?? 0));
   }
 
-  private buildTaskItems(tasks: vscode.Task[], runningNames: Set<string>): TaskTreeItem[] {
+  private buildTaskItems(tasks: vscode.Task[], runningNames: Set<string>, groupName?: string): TaskTreeItem[] {
     return tasks
-      .map(t => new TaskTreeItem(t, runningNames.has(t.name)))
+      .map(t => new TaskTreeItem(t, runningNames.has(t.name), groupName))
       .sort((a, b) => {
         if (a.running !== b.running) { return a.running ? -1 : 1; }
         return a.task.name.localeCompare(b.task.name);
