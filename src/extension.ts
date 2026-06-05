@@ -71,7 +71,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Refresh both views on task lifecycle events
   context.subscriptions.push(
-    vscode.tasks.onDidStartTask(() => refreshAll()),
+    vscode.tasks.onDidStartTask(e => {
+      shared.pendingStop.delete(e.execution.task.name);
+      refreshAll();
+    }),
     vscode.tasks.onDidEndTask(e => {
       clearStopped(e.execution.task.name);
       refreshAll();
