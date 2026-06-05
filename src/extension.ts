@@ -79,6 +79,24 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('run-my-tasks.refreshTasksView', () => refreshAll()),
   );
 
+  // Open tasks.json button in view title
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.openTasksJson', async () => {
+      const folders = vscode.workspace.workspaceFolders;
+      if (!folders?.length) {
+        vscode.window.showErrorMessage('No workspace folder open.');
+        return;
+      }
+      const uri = vscode.Uri.joinPath(folders[0].uri, '.vscode', 'tasks.json');
+      try {
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc);
+      } catch {
+        vscode.window.showErrorMessage('tasks.json not found in .vscode/');
+      }
+    }),
+  );
+
   // Run inline button
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.runTaskFromTree', (item: TaskTreeItem) => {
@@ -137,6 +155,45 @@ export function activate(context: vscode.ExtensionContext): void {
 
       if (!groupName) { return; }
       await saveGroups(groups.filter(g => g.name !== groupName));
+    }),
+  );
+
+  // Rename virtual group
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.renameGroup', async (item?: VirtualGroupItem) => {
+      const groups = loadGroups();
+      let groupName: string | undefined;
+
+      if (item) {
+        groupName = item.group.name;
+      } else {
+        if (groups.length === 0) {
+          vscode.window.showInformationMessage('No groups to rename.');
+          return;
+        }
+        groupName = await vscode.window.showQuickPick(
+          groups.map(g => g.name),
+          { placeHolder: 'Select group to rename' },
+        );
+      }
+
+      if (!groupName) { return; }
+
+      const newName = await vscode.window.showInputBox({
+        prompt: 'New group name',
+        value: groupName,
+        validateInput: v => {
+          if (!v.trim()) { return 'Name cannot be empty'; }
+          if (v !== groupName && groups.some(g => g.name === v)) {
+            return 'A group with this name already exists';
+          }
+        },
+      });
+      if (!newName || newName === groupName) { return; }
+
+      await saveGroups(groups.map(g =>
+        g.name === groupName ? { ...g, name: newName.trim() } : g,
+      ));
     }),
   );
 

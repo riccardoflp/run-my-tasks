@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Rename groups via right-click context menu → **Rename Group**, or by pressing **F2** with a group selected; also available from the command palette
+
 ### Fixed
 
 - Clicking a task item in the tree no longer starts the task — tasks start and stop only via the play/stop inline icon buttons

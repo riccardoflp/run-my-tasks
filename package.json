@@ -76,6 +76,12 @@
         "category": "Run My Tasks"
       },
       {
+        "command": "run-my-tasks.renameGroup",
+        "title": "Rename Group",
+        "icon": "$(edit)",
+        "category": "Run My Tasks"
+      },
+      {
         "command": "run-my-tasks.deleteGroup",
         "title": "Delete Group",
         "icon": "$(trash)",
@@ -110,6 +116,11 @@
         "key": "ctrl+shift+t",
         "mac": "cmd+shift+t",
         "when": "workspaceFolderCount > 0"
+      },
+      {
+        "command": "run-my-tasks.renameGroup",
+        "key": "f2",
+        "when": "focusedView == run-my-tasks.groupsView && viewItem == virtualGroup"
       }
     ],
     "menus": {
@@ -160,6 +171,11 @@
           "command": "run-my-tasks.deleteGroup",
           "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
           "group": "inline@3"
+        },
+        {
+          "command": "run-my-tasks.renameGroup",
+          "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
+          "group": "1_modification@1"
         },
         {
           "command": "run-my-tasks.addTaskToGroup",
