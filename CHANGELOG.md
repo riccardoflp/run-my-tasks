@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clicking a task item in the tree no longer starts the task — tasks start and stop only via the play/stop inline icon buttons
 - Tasks no longer reorder when running — list order now stays stable regardless of execution state
 - Task stopped via the inline button was not shown as running when restarted immediately after
+- **Run Group** now correctly relaunches tasks that were manually stopped but not yet fully terminated
 - Tasks inside a group were displayed in VS Code's internal cache order instead of the user-defined order
 
 ## [0.2.0] - 2026-06-04

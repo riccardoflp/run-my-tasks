@@ -364,7 +364,11 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!group) { return; }
 
       const allTasks = await vscode.tasks.fetchTasks();
-      const runningNames = new Set(vscode.tasks.taskExecutions.map(e => e.task.name));
+      const runningNames = new Set(
+        vscode.tasks.taskExecutions
+          .filter(e => !shared.pendingStop.has(e.task.name))
+          .map(e => e.task.name),
+      );
       const toRun = allTasks.filter(t =>
         group!.tasks.includes(t.name) && !runningNames.has(t.name),
       );
