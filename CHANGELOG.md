@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Drag and drop tasks from the **Tasks** view onto a group in the **Groups** view to add them; drag tasks between groups to move them
 - Rename groups via right-click context menu → **Rename Group**, or by pressing **F2** with a group selected; also available from the command palette
 - Open `tasks.json` button in the panel title bar
 

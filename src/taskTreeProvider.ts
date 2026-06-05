@@ -88,7 +88,65 @@ function buildTaskItems(tasks: vscode.Task[], runningNames: Set<string>, groupNa
   return tasks.map(t => new TaskTreeItem(t, runningNames.has(t.name), groupName));
 }
 
+// VS Code automatically places dragged tree items under this MIME type (lowercase viewId)
+const TASKS_VIEW_MIME = 'application/vnd.code.tree.run-my-tasks.tasksview';
+const GROUPS_VIEW_MIME = 'application/vnd.code.tree.run-my-tasks.groupsview';
+
 type GroupsNode = VirtualGroupItem | TaskTreeItem;
+
+export class TasksDragController implements vscode.TreeDragAndDropController<TaskGroupItem | TaskTreeItem> {
+  readonly dragMimeTypes: string[] = [];
+  readonly dropMimeTypes: string[] = [];
+}
+
+export class GroupsDragController implements vscode.TreeDragAndDropController<GroupsNode> {
+  readonly dragMimeTypes: string[] = [];
+  readonly dropMimeTypes = [TASKS_VIEW_MIME, GROUPS_VIEW_MIME];
+
+  constructor(
+    private readonly shared: SharedState,
+    private readonly onDrop: (groups: VirtualGroup[]) => Promise<void>,
+  ) {}
+
+  async handleDrop(target: GroupsNode | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
+    let targetGroupName: string | undefined;
+    if (target instanceof VirtualGroupItem) {
+      targetGroupName = target.group.name;
+    } else if (target instanceof TaskTreeItem && target.groupName) {
+      targetGroupName = target.groupName;
+    }
+    if (!targetGroupName) { return; }
+
+    const transferItem = dataTransfer.get(TASKS_VIEW_MIME) ?? dataTransfer.get(GROUPS_VIEW_MIME);
+    if (!transferItem) { return; }
+
+    // VS Code provides the actual tree item instances via .value
+    const dragged = transferItem.value as Array<VirtualGroupItem | TaskGroupItem | TaskTreeItem>;
+    if (!Array.isArray(dragged)) { return; }
+
+    const tasks = dragged.filter((item): item is TaskTreeItem => item instanceof TaskTreeItem);
+    if (tasks.length === 0) { return; }
+
+    let groups = [...this.shared.virtualGroups];
+    for (const item of tasks) {
+      const taskName = item.task.name;
+      const fromGroup = item.groupName;
+      if (fromGroup === targetGroupName) { continue; }
+      if (fromGroup) {
+        groups = groups.map(g =>
+          g.name === fromGroup ? { ...g, tasks: g.tasks.filter(t => t !== taskName) } : g,
+        );
+      }
+      groups = groups.map(g =>
+        g.name === targetGroupName && !g.tasks.includes(taskName)
+          ? { ...g, tasks: [...g.tasks, taskName] }
+          : g,
+      );
+    }
+
+    await this.onDrop(groups);
+  }
+}
 
 export class GroupsTreeProvider implements vscode.TreeDataProvider<GroupsNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<GroupsNode | undefined | null | void>();

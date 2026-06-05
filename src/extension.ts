@@ -3,7 +3,9 @@ import { createStatusBarItem } from './statusBar';
 import { showTaskPicker } from './taskPicker';
 import {
   createSharedState,
+  GroupsDragController,
   GroupsTreeProvider,
+  TasksDragController,
   TasksTreeProvider,
   TaskTreeItem,
   VirtualGroup,
@@ -25,14 +27,25 @@ export function activate(context: vscode.ExtensionContext): void {
   const groupsProvider = new GroupsTreeProvider(shared);
   const tasksProvider = new TasksTreeProvider(shared);
 
+  const loadGroups = (): VirtualGroup[] =>
+    context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
+
+  const saveGroups = async (groups: VirtualGroup[]): Promise<void> => {
+    await context.workspaceState.update(GROUPS_KEY, groups);
+    shared.virtualGroups = groups;
+    groupsProvider.refresh();
+  };
+
   context.subscriptions.push(
     vscode.window.createTreeView('run-my-tasks.groupsView', {
       treeDataProvider: groupsProvider,
       showCollapseAll: false,
+      dragAndDropController: new GroupsDragController(shared, saveGroups),
     }),
     vscode.window.createTreeView('run-my-tasks.tasksView', {
       treeDataProvider: tasksProvider,
       showCollapseAll: false,
+      dragAndDropController: new TasksDragController(),
     }),
   );
 
@@ -55,15 +68,6 @@ export function activate(context: vscode.ExtensionContext): void {
   // Load persisted groups on startup
   shared.virtualGroups = context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
   groupsProvider.refresh();
-
-  const loadGroups = (): VirtualGroup[] =>
-    context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
-
-  const saveGroups = async (groups: VirtualGroup[]): Promise<void> => {
-    await context.workspaceState.update(GROUPS_KEY, groups);
-    shared.virtualGroups = groups;
-    groupsProvider.refresh();
-  };
 
   // Refresh both views on task lifecycle events
   context.subscriptions.push(
