@@ -2,7 +2,7 @@
   "name": "run-my-tasks",
   "displayName": "Run My Tasks",
   "description": "Quickly run workspace tasks from a status bar picker or side panel",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "publisher": "RiccardoFilippozzi",
   "repository": "https://github.com/riccardoflp/run-my-tasks",
