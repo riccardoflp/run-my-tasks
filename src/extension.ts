@@ -79,7 +79,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('run-my-tasks.refreshTasksView', () => refreshAll()),
   );
 
-  // Run inline button / click on idle task
+  // Run inline button
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.runTaskFromTree', (item: TaskTreeItem) => {
       Promise.resolve(vscode.tasks.executeTask(item.task)).catch((err: unknown) =>

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Clicking a task item in the tree no longer starts the task — tasks start and stop only via the play/stop inline icon buttons
+
 ## [0.2.0] - 2026-06-04
 
 ### Added
