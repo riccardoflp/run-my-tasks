@@ -12,12 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Drag and drop tasks from the **Tasks** view onto a group in the **Groups** view to add them; drag tasks between groups to move them
 - Rename groups via right-click context menu → **Rename Group**, or by pressing **F2** with a group selected; also available from the command palette
 - Open `tasks.json` button in the panel title bar
+- Reorder tasks within a group via **Move Up** / **Move Down** in the right-click context menu, or by dragging a task onto another task in the same group
+- Reorder groups via **Move Up** / **Move Down** in the right-click context menu, or by dragging a group header onto another group
 
 ### Fixed
 
 - Clicking a task item in the tree no longer starts the task — tasks start and stop only via the play/stop inline icon buttons
 - Tasks no longer reorder when running — list order now stays stable regardless of execution state
 - Task stopped via the inline button was not shown as running when restarted immediately after
+- Tasks inside a group were displayed in VS Code's internal cache order instead of the user-defined order
 
 ## [0.2.0] - 2026-06-04
 

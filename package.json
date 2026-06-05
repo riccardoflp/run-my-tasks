@@ -114,6 +114,30 @@
         "title": "Open tasks.json",
         "icon": "$(go-to-file)",
         "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.moveTaskUp",
+        "title": "Move Up",
+        "icon": "$(arrow-up)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.moveTaskDown",
+        "title": "Move Down",
+        "icon": "$(arrow-down)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.moveGroupUp",
+        "title": "Move Up",
+        "icon": "$(arrow-up)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.moveGroupDown",
+        "title": "Move Down",
+        "icon": "$(arrow-down)",
+        "category": "Run My Tasks"
       }
     ],
     "keybindings": [
@@ -197,6 +221,26 @@
           "command": "run-my-tasks.removeTaskFromGroup",
           "when": "view == run-my-tasks.groupsView && (viewItem == idleTaskInGroup || viewItem == runningTaskInGroup)",
           "group": "1_group"
+        },
+        {
+          "command": "run-my-tasks.moveTaskUp",
+          "when": "view == run-my-tasks.groupsView && (viewItem == idleTaskInGroup || viewItem == runningTaskInGroup)",
+          "group": "2_order@1"
+        },
+        {
+          "command": "run-my-tasks.moveTaskDown",
+          "when": "view == run-my-tasks.groupsView && (viewItem == idleTaskInGroup || viewItem == runningTaskInGroup)",
+          "group": "2_order@2"
+        },
+        {
+          "command": "run-my-tasks.moveGroupUp",
+          "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
+          "group": "2_order@1"
+        },
+        {
+          "command": "run-my-tasks.moveGroupDown",
+          "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
+          "group": "2_order@2"
         }
       ]
     },

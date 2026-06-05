@@ -289,6 +289,58 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Move task up/down within its group
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.moveTaskUp', async (item: TaskTreeItem) => {
+      if (!item.groupName) { return; }
+      const groups = loadGroups();
+      const group = groups.find(g => g.name === item.groupName);
+      if (!group) { return; }
+      const idx = group.tasks.indexOf(item.task.name);
+      if (idx <= 0) { return; }
+      const newTasks = [...group.tasks];
+      [newTasks[idx - 1], newTasks[idx]] = [newTasks[idx], newTasks[idx - 1]];
+      await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, tasks: newTasks } : g));
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.moveTaskDown', async (item: TaskTreeItem) => {
+      if (!item.groupName) { return; }
+      const groups = loadGroups();
+      const group = groups.find(g => g.name === item.groupName);
+      if (!group) { return; }
+      const idx = group.tasks.indexOf(item.task.name);
+      if (idx < 0 || idx >= group.tasks.length - 1) { return; }
+      const newTasks = [...group.tasks];
+      [newTasks[idx], newTasks[idx + 1]] = [newTasks[idx + 1], newTasks[idx]];
+      await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, tasks: newTasks } : g));
+    }),
+  );
+
+  // Move group up/down
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.moveGroupUp', async (item: VirtualGroupItem) => {
+      const groups = loadGroups();
+      const idx = groups.findIndex(g => g.name === item.group.name);
+      if (idx <= 0) { return; }
+      const newGroups = [...groups];
+      [newGroups[idx - 1], newGroups[idx]] = [newGroups[idx], newGroups[idx - 1]];
+      await saveGroups(newGroups);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.moveGroupDown', async (item: VirtualGroupItem) => {
+      const groups = loadGroups();
+      const idx = groups.findIndex(g => g.name === item.group.name);
+      if (idx < 0 || idx >= groups.length - 1) { return; }
+      const newGroups = [...groups];
+      [newGroups[idx], newGroups[idx + 1]] = [newGroups[idx + 1], newGroups[idx]];
+      await saveGroups(newGroups);
+    }),
+  );
+
   // Run all idle tasks in group
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.runGroup', async (item?: VirtualGroupItem) => {
