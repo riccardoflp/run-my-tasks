@@ -85,12 +85,7 @@ function buildGroups(tasks: vscode.Task[], runningNames: Set<string>): TaskGroup
 }
 
 function buildTaskItems(tasks: vscode.Task[], runningNames: Set<string>, groupName?: string): TaskTreeItem[] {
-  return tasks
-    .map(t => new TaskTreeItem(t, runningNames.has(t.name), groupName))
-    .sort((a, b) => {
-      if (a.running !== b.running) { return a.running ? -1 : 1; }
-      return a.task.name.localeCompare(b.task.name);
-    });
+  return tasks.map(t => new TaskTreeItem(t, runningNames.has(t.name), groupName));
 }
 
 type GroupsNode = VirtualGroupItem | TaskTreeItem;

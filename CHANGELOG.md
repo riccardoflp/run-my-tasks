@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Clicking a task item in the tree no longer starts the task — tasks start and stop only via the play/stop inline icon buttons
+- Tasks no longer reorder when running — list order now stays stable regardless of execution state
 
 ## [0.2.0] - 2026-06-04
 
