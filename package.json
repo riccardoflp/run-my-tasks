@@ -108,6 +108,12 @@
         "title": "Stop Group",
         "icon": "$(debug-stop)",
         "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.openTasksJson",
+        "title": "Open tasks.json",
+        "icon": "$(go-to-file)",
+        "category": "Run My Tasks"
       }
     ],
     "keybindings": [
@@ -132,6 +138,11 @@
         },
         {
           "command": "run-my-tasks.refreshTasksView",
+          "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView",
+          "group": "navigation"
+        },
+        {
+          "command": "run-my-tasks.openTasksJson",
           "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView",
           "group": "navigation"
         }
