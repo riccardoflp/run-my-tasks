@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Clicking a running task in the tree focuses the terminal it is running in
 
+### Fixed
+
+- The task picker now shows the command of `shell` and `process` tasks defined in `tasks.json` as the detail line
+
 ## [0.3.0] - 2026-06-05
 
 ### Added

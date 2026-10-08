@@ -73,12 +73,24 @@ export async function showTaskPicker(): Promise<void> {
 
 function buildTaskDetail(task: vscode.Task): string | undefined {
   const def = task.definition;
-  if (def.type === 'shell' && def.command) {
-    const cmd: string = typeof def.command === 'string' ? def.command : (def.command?.value ?? '');
-    return cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd;
-  }
   if (def.type === 'npm' && def.script) {
     return `npm run ${def.script}`;
+  }
+  // tasks.json definitions carry only the type: the command lives on the execution
+  const cmd = commandLineOf(task.execution);
+  if (!cmd) { return undefined; }
+  return cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd;
+}
+
+function commandLineOf(execution: vscode.Task['execution']): string | undefined {
+  const text = (part: string | vscode.ShellQuotedString) => (typeof part === 'string' ? part : part.value);
+  if (execution instanceof vscode.ShellExecution) {
+    if (execution.commandLine) { return execution.commandLine; }
+    if (!execution.command) { return undefined; }
+    return [execution.command, ...(execution.args ?? [])].map(text).join(' ');
+  }
+  if (execution instanceof vscode.ProcessExecution) {
+    return [execution.process, ...execution.args].join(' ');
   }
   return undefined;
 }
