@@ -3,6 +3,7 @@ import { createStatusBarItem } from './statusBar';
 import { showTaskPicker } from './taskPicker';
 import {
   createSharedState,
+  SharedState,
   GroupsDragController,
   GroupsTreeProvider,
   TasksDragController,
@@ -14,7 +15,13 @@ import {
 
 const GROUPS_KEY = 'virtualGroups';
 
-export function activate(context: vscode.ExtensionContext): void {
+// Returned from activate() so the integration tests can inspect and reset the state
+export interface ExtensionApi {
+  readonly shared: SharedState;
+  saveGroups(groups: VirtualGroup[]): Promise<void>;
+}
+
+export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Status bar picker command
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.showTaskPicker', () => showTaskPicker()),
@@ -425,6 +432,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
   );
+
+  return { shared, saveGroups };
 }
 
 export function deactivate(): void {}

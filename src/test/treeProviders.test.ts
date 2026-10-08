@@ -24,7 +24,7 @@ suite('Tree providers', () => {
     assert.strictEqual((roots[0] as TaskGroupItem).source, 'Workspace');
 
     const names = (await provider.getChildren(roots[0])).map(i => (i as TaskTreeItem).task.name);
-    assert.deepStrictEqual(names.sort(), ['compound', 'long-running', 'quick']);
+    assert.deepStrictEqual(names.sort(), ['compound', 'long-running', 'long-running-2', 'quick']);
   });
 
   test('Groups view keeps the user-defined task order and skips unknown tasks', async () => {

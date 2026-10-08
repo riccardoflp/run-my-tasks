@@ -8,6 +8,12 @@
       "problemMatcher": []
     },
     {
+      "label": "long-running-2",
+      "type": "shell",
+      "command": "node -e \"setInterval(() => {}, 1000)\"",
+      "problemMatcher": []
+    },
+    {
       "label": "quick",
       "type": "shell",
       "command": "node -e \"0\"",
