@@ -6,3 +6,7 @@ node_modules/**
 **/*.map
 **/*.ts
 !src/**/*.d.ts
+.vscode-test/**
+.vscode-test.mjs
+out/test/**
+test-fixtures/**

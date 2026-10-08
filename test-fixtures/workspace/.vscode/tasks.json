@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "long-running",
+      "type": "shell",
+      "command": "node -e \"setInterval(() => {}, 1000)\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "quick",
+      "type": "shell",
+      "command": "node -e \"0\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "compound",
+      "dependsOn": ["quick"],
+      "problemMatcher": []
+    }
+  ]
+}
