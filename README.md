@@ -13,6 +13,8 @@ A VS Code extension that gives you fast access to all workspace tasks via a stat
 - **Groups** — virtual groups you create to organize and batch-run tasks. Each group has inline **Run All** and **Stop All** buttons. Tasks within a group can be reordered with **Move Up** / **Move Down** (right-click menu) or by dragging. Groups themselves can also be reordered the same way.
 - **Tasks** — all workspace tasks listed by source. Tasks show a green spinning indicator while running and have inline **Run** / **Stop** buttons. Right-click a task to add it to a group.
 
+Click a running task in either section to focus the terminal it is running in.
+
 **Drag and drop** — drag a task from the **Tasks** view onto a group header in the **Groups** view to add it to that group. Drag a task within the **Groups** view onto another task to reorder, or onto a different group header to move it.
 
 The picker groups tasks by source (Workspace tasks first, then extension-contributed tasks in alphabetical order) and optionally shows the underlying shell command or npm script as a detail line.
