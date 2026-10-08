@@ -124,6 +124,23 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Click on a running task: focus the terminal it runs in
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.focusTaskTerminal', (item: TaskTreeItem) => {
+      // The API has no link from TaskExecution to Terminal: match by the terminal title
+      // VS Code gives task terminals ("Task - <name>", or just "<name>" in newer versions)
+      const name = item.task.name;
+      const terminal =
+        vscode.window.terminals.find(t => t.name === `Task - ${name}`) ??
+        vscode.window.terminals.find(t => t.name === name);
+      if (terminal) {
+        terminal.show();
+      } else {
+        vscode.window.showInformationMessage(`No terminal found for task "${name}".`);
+      }
+    }),
+  );
+
   // Create virtual group
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.createGroup', async () => {

@@ -138,6 +138,12 @@
         "title": "Move Down",
         "icon": "$(arrow-down)",
         "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.focusTaskTerminal",
+        "title": "Show Terminal",
+        "icon": "$(terminal)",
+        "category": "Run My Tasks"
       }
     ],
     "keybindings": [
@@ -154,6 +160,12 @@
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "run-my-tasks.focusTaskTerminal",
+          "when": "false"
+        }
+      ],
       "view/title": [
         {
           "command": "run-my-tasks.createGroup",

@@ -57,6 +57,13 @@ export class TaskTreeItem extends vscode.TreeItem {
     );
     const base = running ? 'runningTask' : 'idleTask';
     this.contextValue = groupName ? `${base}InGroup` : base;
+    if (running) {
+      this.command = {
+        command: 'run-my-tasks.focusTaskTerminal',
+        title: 'Show Terminal',
+        arguments: [this],
+      };
+    }
   }
 }
 
