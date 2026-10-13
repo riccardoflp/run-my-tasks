@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-13
+
 ### Added
 
 - Search button in the side panel: filters the **Groups**, **Tasks** and **Launch Configurations** views as you type, matching the name of the item or of its group
@@ -69,7 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runMyTasks.statusBarPriority` setting to control the button position within its alignment group
 - `runMyTasks.showTaskType` setting to show/hide task source and type detail lines in the picker
 
-[Unreleased]: https://github.com/riccardoflp/run-my-tasks/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/riccardoflp/run-my-tasks/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.1.0...v0.2.0
