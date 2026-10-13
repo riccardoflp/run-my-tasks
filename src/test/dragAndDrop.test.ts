@@ -3,12 +3,14 @@ import * as vscode from 'vscode';
 import {
   createSharedState,
   GroupsDragController,
+  LaunchDragController,
+  LaunchTreeItem,
   TasksDragController,
   TaskTreeItem,
   VirtualGroup,
   VirtualGroupItem,
 } from '../taskTreeProvider';
-import { getTask } from './helpers';
+import { getLaunch, getTask } from './helpers';
 
 suite('Groups drag and drop', () => {
   let quick: vscode.Task;
@@ -83,6 +85,47 @@ suite('Groups drag and drop', () => {
     await controller.handleDrop(group(dev), dt);
 
     assert.deepStrictEqual(saved()?.[0].tasks, ['quick', 'long-running']);
+  });
+
+  test('adds a launch configuration dragged from the Launch Configurations view', async () => {
+    const dev = { name: 'Dev', tasks: ['quick'] };
+    const { controller, saved } = setup([dev]);
+
+    const dt = new vscode.DataTransfer();
+    new LaunchDragController().handleDrag([new LaunchTreeItem(getLaunch('debug-idle'), false)], dt);
+    await controller.handleDrop(group(dev), dt);
+
+    assert.deepStrictEqual(saved(), [{ name: 'Dev', tasks: ['quick'], launches: ['debug-idle'] }]);
+  });
+
+  test('reorders a launch configuration by dropping it onto another one, not onto a task', async () => {
+    const dev = { name: 'Dev', tasks: ['quick'], launches: ['debug-idle', 'debug-idle-2', 'debug-both'] };
+    const { controller, saved } = setup([dev]);
+    const launchInGroup = (name: string) => new LaunchTreeItem(getLaunch(name), false, 'Dev');
+
+    const dt = new vscode.DataTransfer();
+    controller.handleDrag([launchInGroup('debug-both')], dt);
+    await controller.handleDrop(launchInGroup('debug-idle'), dt);
+    assert.deepStrictEqual(saved()?.[0].launches, ['debug-both', 'debug-idle', 'debug-idle-2']);
+
+    controller.handleDrag([launchInGroup('debug-both')], dt);
+    await controller.handleDrop(inGroup(quick, 'Dev'), dt);
+    assert.deepStrictEqual(saved()?.[0], dev);
+  });
+
+  test('moves a launch configuration to another group', async () => {
+    const dev = { name: 'Dev', tasks: ['quick'], launches: ['debug-idle', 'debug-both'] };
+    const build = { name: 'Build', tasks: [] };
+    const { controller, saved } = setup([dev, build]);
+
+    const dt = new vscode.DataTransfer();
+    controller.handleDrag([new LaunchTreeItem(getLaunch('debug-idle'), false, 'Dev')], dt);
+    await controller.handleDrop(group(build), dt);
+
+    assert.deepStrictEqual(saved(), [
+      { name: 'Dev', tasks: ['quick'], launches: ['debug-both'] },
+      { name: 'Build', tasks: [], launches: ['debug-idle'] },
+    ]);
   });
 
   test('ignores a drop with no drag in progress', async () => {

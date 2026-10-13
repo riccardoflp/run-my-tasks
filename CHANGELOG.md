@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Search button in the side panel: filters the **Groups**, **Tasks** and **Launch Configurations** views as you type, matching the name of the item or of its group
+- **Launch Configurations** view listing the configurations and compounds of `launch.json`, with inline **Start Debugging** / **Stop** buttons, **Run Without Debugging** in the right-click menu and an **Open launch.json** button
+- Launch configurations can be added to groups (right-click, drag and drop or command palette), reordered, and are started and stopped by **Run Group** / **Stop Group**
+- The task picker lists the launch configurations after the tasks
+- Clicking a running launch configuration shows the Debug Console
+
+### Changed
+
+- **Delete Group** moved from the inline buttons of a group to its right-click context menu
+
 ## [0.4.0] - 2026-10-08
 
 ### Added

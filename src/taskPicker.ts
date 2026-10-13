@@ -1,7 +1,12 @@
 import * as vscode from 'vscode';
+import { getLaunchConfigs, LaunchConfig, startLaunch } from './launchConfigs';
 
 interface TaskQuickPickItem extends vscode.QuickPickItem {
   task: vscode.Task;
+}
+
+interface LaunchQuickPickItem extends vscode.QuickPickItem {
+  launch: LaunchConfig;
 }
 
 export async function showTaskPicker(): Promise<void> {
@@ -13,7 +18,9 @@ export async function showTaskPicker(): Promise<void> {
     return;
   }
 
-  if (tasks.length === 0) {
+  const launches = getLaunchConfigs();
+
+  if (tasks.length === 0 && launches.length === 0) {
     vscode.window.showInformationMessage(
       'No tasks found. Add tasks to .vscode/tasks.json to get started.',
     );
@@ -55,10 +62,30 @@ export async function showTaskPicker(): Promise<void> {
     }
   }
 
+  // Launch configurations last, in launch.json order
+  if (launches.length > 0) {
+    items.push({ label: 'Launch Configurations', kind: vscode.QuickPickItemKind.Separator });
+    for (const launch of launches) {
+      const item: LaunchQuickPickItem = {
+        label: `$(debug-alt) ${launch.name}`,
+        launch,
+      };
+      if (showType) {
+        item.detail = buildLaunchDetail(launch);
+      }
+      items.push(item);
+    }
+  }
+
   const selected = await vscode.window.showQuickPick(items, {
-    placeHolder: 'Select a task to run...',
+    placeHolder: 'Select a task or launch configuration to run...',
     matchOnDetail: true,
   });
+
+  if (selected && 'launch' in selected) {
+    await startLaunch((selected as LaunchQuickPickItem).launch);
+    return;
+  }
 
   if (!selected || !('task' in selected)) {
     return;
@@ -80,6 +107,11 @@ function buildTaskDetail(task: vscode.Task): string | undefined {
   const cmd = commandLineOf(task.execution);
   if (!cmd) { return undefined; }
   return cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd;
+}
+
+function buildLaunchDetail(launch: LaunchConfig): string {
+  if (launch.compound) { return `compound: ${launch.compound.join(', ')}`; }
+  return [launch.type, launch.request].filter(Boolean).join(' ');
 }
 
 function commandLineOf(execution: vscode.Task['execution']): string | undefined {

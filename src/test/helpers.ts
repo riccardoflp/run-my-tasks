@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../extension';
+import { getLaunchConfigs, LaunchConfig, runningLaunchNames } from '../launchConfigs';
 
 export async function waitFor<T>(
   probe: () => T | undefined | false | Promise<T | undefined | false>,
@@ -106,4 +107,44 @@ export async function waitForRunning(name: string): Promise<void> {
 
 export function runningNames(): string[] {
   return vscode.tasks.taskExecutions.map(e => e.task.name).sort();
+}
+
+export function getLaunch(name: string): LaunchConfig {
+  const config = getLaunchConfigs().find(c => c.name === name);
+  if (!config) { throw new Error(`Fixture launch configuration "${name}" not found`); }
+  return config;
+}
+
+export async function waitForDebugging(name: string): Promise<void> {
+  await waitFor(() => runningLaunchNames().has(name), `"${name}" to start debugging`);
+}
+
+export async function stopAllDebugSessions(): Promise<void> {
+  await vscode.debug.stopDebugging();
+  await waitFor(() => runningLaunchNames().size === 0, 'all debug sessions to stop');
+}
+
+// Replaces createInputBox with a fake the test types into
+export function fakeInputBox(): { box: vscode.InputBox; type(value: string): void; accept(): void } {
+  const change = new vscode.EventEmitter<string>();
+  const accepted = new vscode.EventEmitter<void>();
+  const hidden = new vscode.EventEmitter<void>();
+  const box = {
+    value: '',
+    onDidChangeValue: change.event,
+    onDidAccept: accepted.event,
+    onDidHide: hidden.event,
+    show: () => undefined,
+    hide: () => hidden.fire(),
+    dispose: () => undefined,
+  } as unknown as vscode.InputBox;
+  stub(vscode.window, 'createInputBox', () => box);
+  return {
+    box,
+    type: value => {
+      box.value = value;
+      change.fire(value);
+    },
+    accept: () => accepted.fire(),
+  };
 }

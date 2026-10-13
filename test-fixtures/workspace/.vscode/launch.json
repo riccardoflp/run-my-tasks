@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "debug-idle",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/idle.js",
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "debug-idle-2",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/idle.js",
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "debug-both",
+      "configurations": ["debug-idle", "debug-idle-2"]
+    }
+  ]
+}

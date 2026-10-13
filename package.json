@@ -1,7 +1,7 @@
 {
   "name": "run-my-tasks",
   "displayName": "Run My Tasks",
-  "description": "Quickly run workspace tasks from a status bar picker or side panel",
+  "description": "Quickly run workspace tasks and launch configurations from a status bar picker or side panel",
   "version": "0.4.0",
   "license": "MIT",
   "publisher": "RiccardoFilippozzi",
@@ -17,6 +17,8 @@
     "tasks",
     "task runner",
     "build",
+    "launch",
+    "debug",
     "status bar"
   ],
   "activationEvents": [
@@ -42,9 +44,20 @@
         {
           "id": "run-my-tasks.tasksView",
           "name": "Tasks"
+        },
+        {
+          "id": "run-my-tasks.launchView",
+          "name": "Launch Configurations"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "run-my-tasks.launchView",
+        "contents": "No launch configurations found.\n[Open launch.json](command:workbench.action.debug.configure)",
+        "when": "!runMyTasks.filterActive"
+      }
+    ],
     "commands": [
       {
         "command": "run-my-tasks.showTaskPicker",
@@ -144,6 +157,42 @@
         "title": "Show Terminal",
         "icon": "$(terminal)",
         "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.search",
+        "title": "Search...",
+        "icon": "$(search)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.clearSearch",
+        "title": "Clear Search",
+        "icon": "$(clear-all)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.debugLaunchFromTree",
+        "title": "Start Debugging",
+        "icon": "$(debug-start)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.runLaunchFromTree",
+        "title": "Run Without Debugging",
+        "icon": "$(run)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.stopLaunchFromTree",
+        "title": "Stop",
+        "icon": "$(debug-stop)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.openLaunchJson",
+        "title": "Open launch.json",
+        "icon": "$(go-to-file)",
+        "category": "Run My Tasks"
       }
     ],
     "keybindings": [
@@ -164,23 +213,54 @@
         {
           "command": "run-my-tasks.focusTaskTerminal",
           "when": "false"
+        },
+        {
+          "command": "run-my-tasks.debugLaunchFromTree",
+          "when": "false"
+        },
+        {
+          "command": "run-my-tasks.runLaunchFromTree",
+          "when": "false"
+        },
+        {
+          "command": "run-my-tasks.stopLaunchFromTree",
+          "when": "false"
+        },
+        {
+          "command": "run-my-tasks.clearSearch",
+          "when": "runMyTasks.filterActive"
         }
       ],
       "view/title": [
         {
-          "command": "run-my-tasks.createGroup",
-          "when": "view == run-my-tasks.groupsView",
-          "group": "navigation"
+          "command": "run-my-tasks.search",
+          "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView || view == run-my-tasks.launchView",
+          "group": "navigation@1"
         },
         {
-          "command": "run-my-tasks.refreshTasksView",
-          "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView",
-          "group": "navigation"
+          "command": "run-my-tasks.clearSearch",
+          "when": "(view == run-my-tasks.groupsView || view == run-my-tasks.tasksView || view == run-my-tasks.launchView) && runMyTasks.filterActive",
+          "group": "navigation@2"
+        },
+        {
+          "command": "run-my-tasks.createGroup",
+          "when": "view == run-my-tasks.groupsView",
+          "group": "navigation@3"
         },
         {
           "command": "run-my-tasks.openTasksJson",
           "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView",
-          "group": "navigation"
+          "group": "navigation@4"
+        },
+        {
+          "command": "run-my-tasks.openLaunchJson",
+          "when": "view == run-my-tasks.launchView",
+          "group": "navigation@4"
+        },
+        {
+          "command": "run-my-tasks.refreshTasksView",
+          "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView || view == run-my-tasks.launchView",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -205,6 +285,31 @@
           "group": "inline"
         },
         {
+          "command": "run-my-tasks.debugLaunchFromTree",
+          "when": "view == run-my-tasks.launchView && viewItem == idleLaunch",
+          "group": "inline"
+        },
+        {
+          "command": "run-my-tasks.stopLaunchFromTree",
+          "when": "view == run-my-tasks.launchView && viewItem == runningLaunch",
+          "group": "inline"
+        },
+        {
+          "command": "run-my-tasks.debugLaunchFromTree",
+          "when": "view == run-my-tasks.groupsView && viewItem == idleLaunchInGroup",
+          "group": "inline"
+        },
+        {
+          "command": "run-my-tasks.stopLaunchFromTree",
+          "when": "view == run-my-tasks.groupsView && viewItem == runningLaunchInGroup",
+          "group": "inline"
+        },
+        {
+          "command": "run-my-tasks.runLaunchFromTree",
+          "when": "viewItem == idleLaunch || viewItem == idleLaunchInGroup",
+          "group": "0_run"
+        },
+        {
           "command": "run-my-tasks.runGroup",
           "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
           "group": "inline@1"
@@ -215,14 +320,14 @@
           "group": "inline@2"
         },
         {
-          "command": "run-my-tasks.deleteGroup",
-          "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
-          "group": "inline@3"
-        },
-        {
           "command": "run-my-tasks.renameGroup",
           "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
           "group": "1_modification@1"
+        },
+        {
+          "command": "run-my-tasks.deleteGroup",
+          "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
+          "group": "1_modification@2"
         },
         {
           "command": "run-my-tasks.addTaskToGroup",
@@ -230,18 +335,23 @@
           "group": "1_group"
         },
         {
+          "command": "run-my-tasks.addTaskToGroup",
+          "when": "view == run-my-tasks.launchView && (viewItem == idleLaunch || viewItem == runningLaunch)",
+          "group": "1_group"
+        },
+        {
           "command": "run-my-tasks.removeTaskFromGroup",
-          "when": "view == run-my-tasks.groupsView && (viewItem == idleTaskInGroup || viewItem == runningTaskInGroup)",
+          "when": "view == run-my-tasks.groupsView && viewItem =~ /InGroup$/",
           "group": "1_group"
         },
         {
           "command": "run-my-tasks.moveTaskUp",
-          "when": "view == run-my-tasks.groupsView && (viewItem == idleTaskInGroup || viewItem == runningTaskInGroup)",
+          "when": "view == run-my-tasks.groupsView && viewItem =~ /InGroup$/",
           "group": "2_order@1"
         },
         {
           "command": "run-my-tasks.moveTaskDown",
-          "when": "view == run-my-tasks.groupsView && (viewItem == idleTaskInGroup || viewItem == runningTaskInGroup)",
+          "when": "view == run-my-tasks.groupsView && viewItem =~ /InGroup$/",
           "group": "2_order@2"
         },
         {
@@ -276,7 +386,7 @@
         "runMyTasks.showTaskType": {
           "type": "boolean",
           "default": true,
-          "description": "Show the task source and command as detail lines in the picker."
+          "description": "Show the task command, or the launch configuration type, as a detail line in the picker."
         }
       }
     }

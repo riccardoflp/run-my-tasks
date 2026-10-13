@@ -1,13 +1,14 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../extension';
-import { TaskTreeItem, VirtualGroup, VirtualGroupItem } from '../taskTreeProvider';
+import { LaunchTreeItem, TaskTreeItem, VirtualGroup, VirtualGroupItem } from '../taskTreeProvider';
 import {
   answerInputBox,
   answerQuickPicks,
   cancel,
   captureMessages,
   getApi,
+  getLaunch,
   getTask,
   pick,
   restoreStubs,
@@ -154,9 +155,30 @@ suite('Group commands', () => {
       await given([{ name: 'Dev', tasks: [] }]);
       const offered = answerQuickPicks(pick('compound'), pick('Dev'));
       await run('addTaskToGroup');
-      const taskLabels = (offered[0] as vscode.QuickPickItem[]).map(i => i.label).sort();
-      assert.deepStrictEqual(taskLabels, ['compound', 'long-running', 'long-running-2', 'quick']);
+      const labels = (offered[0] as vscode.QuickPickItem[]).map(i => i.label).sort();
+      assert.deepStrictEqual(labels, [
+        'compound', 'debug-both', 'debug-idle', 'debug-idle-2', 'long-running', 'long-running-2', 'quick',
+      ]);
       assert.deepStrictEqual(groups(), [{ name: 'Dev', tasks: ['compound'] }]);
+    });
+
+    test('adds the clicked launch configuration to the picked group', async () => {
+      await given([{ name: 'Dev', tasks: ['quick'] }]);
+      answerQuickPicks(pick('Dev'));
+      await run('addTaskToGroup', new LaunchTreeItem(getLaunch('debug-idle'), false));
+      restoreStubs();
+      answerQuickPicks(pick('Dev'));
+      await run('addTaskToGroup', new LaunchTreeItem(getLaunch('debug-idle'), false));
+      assert.deepStrictEqual(groups(), [{ name: 'Dev', tasks: ['quick'], launches: ['debug-idle'] }]);
+    });
+
+    test('adds a launch configuration picked from the palette', async () => {
+      await given([{ name: 'Dev', tasks: [] }]);
+      const offered = answerQuickPicks(pick('debug-both'), pick('Dev'));
+      await run('addTaskToGroup');
+      const launchItem = (offered[0] as vscode.QuickPickItem[]).find(i => i.label === 'debug-both');
+      assert.strictEqual(launchItem?.description, 'Launch Configuration');
+      assert.deepStrictEqual(groups(), [{ name: 'Dev', tasks: [], launches: ['debug-both'] }]);
     });
 
     test('does nothing when the group pick is cancelled', async () => {
@@ -189,8 +211,23 @@ suite('Group commands', () => {
       await given([{ name: 'Empty', tasks: [] }, { name: 'Dev', tasks: ['quick', 'compound'] }]);
       const offered = answerQuickPicks(pick('Dev'), pick('compound'));
       await run('removeTaskFromGroup');
-      assert.deepStrictEqual(offered, [['Dev'], ['quick', 'compound']]);
+      assert.deepStrictEqual(offered[0], ['Dev']);
+      assert.deepStrictEqual((offered[1] as vscode.QuickPickItem[]).map(i => i.label), ['quick', 'compound']);
       assert.deepStrictEqual(groups()[1], { name: 'Dev', tasks: ['quick'] });
+    });
+
+    test('removes the clicked launch configuration, leaving a task of the same name', async () => {
+      await given([{ name: 'Dev', tasks: ['debug-idle'], launches: ['debug-idle', 'debug-both'] }]);
+      await run('removeTaskFromGroup', new LaunchTreeItem(getLaunch('debug-idle'), false, 'Dev'));
+      assert.deepStrictEqual(groups(), [{ name: 'Dev', tasks: ['debug-idle'], launches: ['debug-both'] }]);
+    });
+
+    test('offers the launch configurations of a group when run from the palette', async () => {
+      await given([{ name: 'Dev', tasks: ['quick'], launches: ['debug-idle'] }, { name: 'Debug', tasks: [], launches: ['debug-both'] }]);
+      const offered = answerQuickPicks(pick('Debug'), pick('debug-both'));
+      await run('removeTaskFromGroup');
+      assert.deepStrictEqual(offered[0], ['Dev', 'Debug']);
+      assert.deepStrictEqual(groups()[1], { name: 'Debug', tasks: [], launches: [] });
     });
 
     test('tells the user when no group has tasks', async () => {
@@ -216,6 +253,17 @@ suite('Group commands', () => {
       assert.deepStrictEqual(devTasks(), ['long-running', 'quick', 'compound']);
       await run('moveTaskDown', await taskItem('quick'));
       assert.deepStrictEqual(devTasks(), ['long-running', 'compound', 'quick']);
+    });
+
+    test('moveTaskUp / moveTaskDown reorder launch configurations among themselves', async () => {
+      await given([{ name: 'Dev', tasks: ['quick'], launches: ['debug-idle', 'debug-idle-2', 'debug-both'] }]);
+      const launchItem = (name: string) => new LaunchTreeItem(getLaunch(name), false, 'Dev');
+      await run('moveTaskUp', launchItem('debug-both'));
+      await run('moveTaskDown', launchItem('debug-idle'));
+      await run('moveTaskUp', launchItem('debug-both'));
+      assert.deepStrictEqual(groups(), [
+        { name: 'Dev', tasks: ['quick'], launches: ['debug-both', 'debug-idle', 'debug-idle-2'] },
+      ]);
     });
 
     test('moving a task past either end does nothing', async () => {

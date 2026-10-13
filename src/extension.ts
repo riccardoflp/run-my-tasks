@@ -1,11 +1,25 @@
 import * as vscode from 'vscode';
+import {
+  getLaunchConfigs,
+  isLaunchRunning,
+  runningLaunchNames,
+  startLaunch,
+  stopLaunch,
+  trackDebugSessions,
+} from './launchConfigs';
 import { createStatusBarItem } from './statusBar';
 import { showTaskPicker } from './taskPicker';
 import {
   createSharedState,
+  EntryKind,
+  EntryTreeItem,
+  groupEntries,
   SharedState,
   GroupsDragController,
   GroupsTreeProvider,
+  LaunchDragController,
+  LaunchTreeItem,
+  LaunchTreeProvider,
   TasksDragController,
   TasksTreeProvider,
   TaskTreeItem,
@@ -14,6 +28,19 @@ import {
 } from './taskTreeProvider';
 
 const GROUPS_KEY = 'virtualGroups';
+
+// Tells launch configurations from tasks in the pickers listing both
+const LAUNCH_LABEL = 'Launch Configuration';
+
+interface GroupEntry { kind: EntryKind; name: string; }
+
+interface EntryQuickPickItem extends vscode.QuickPickItem {
+  entry: GroupEntry;
+}
+
+function entryPickItem(kind: EntryKind, name: string, description?: string): EntryQuickPickItem {
+  return { label: name, description, entry: { kind, name } };
+}
 
 // Returned from activate() so the integration tests can inspect and reset the state
 export interface ExtensionApi {
@@ -33,6 +60,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const shared = createSharedState();
   const groupsProvider = new GroupsTreeProvider(shared);
   const tasksProvider = new TasksTreeProvider(shared);
+  const launchProvider = new LaunchTreeProvider(shared);
 
   const loadGroups = (): VirtualGroup[] =>
     context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
@@ -43,7 +71,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     groupsProvider.refresh();
   };
 
-  context.subscriptions.push(
+  const views: vscode.TreeView<unknown>[] = [
     vscode.window.createTreeView('run-my-tasks.groupsView', {
       treeDataProvider: groupsProvider,
       showCollapseAll: false,
@@ -54,12 +82,36 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       showCollapseAll: false,
       dragAndDropController: new TasksDragController(),
     }),
-  );
+    vscode.window.createTreeView('run-my-tasks.launchView', {
+      treeDataProvider: launchProvider,
+      showCollapseAll: false,
+      dragAndDropController: new LaunchDragController(),
+    }),
+  ];
+  context.subscriptions.push(...views);
 
   const refreshAll = (): void => {
     shared.cachedTasks = null;
     groupsProvider.refresh();
     tasksProvider.refresh();
+    launchProvider.refresh();
+  };
+
+  const refreshLaunches = (): void => {
+    groupsProvider.refresh();
+    launchProvider.refresh();
+  };
+
+  // Narrow all the views to the items matching the search text; an empty text shows everything again
+  const setFilter = (filter: string): void => {
+    shared.filter = filter;
+    for (const view of views) {
+      view.message = filter ? `Search results for "${filter}"` : undefined;
+    }
+    vscode.commands.executeCommand('setContext', 'runMyTasks.filterActive', filter !== '');
+    groupsProvider.refresh();
+    tasksProvider.refresh();
+    launchProvider.refresh();
   };
 
   const markStopped = (name: string): void => {
@@ -88,27 +140,52 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
+  // Refresh the launch configurations when a debug session starts or ends, or launch.json changes
+  context.subscriptions.push(
+    trackDebugSessions(refreshLaunches),
+    vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('launch')) { refreshLaunches(); }
+    }),
+  );
+
+  // Search button in view title: filters the views while typing
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.search', () => {
+      const input = vscode.window.createInputBox();
+      input.placeholder = 'Search tasks, launch configurations and groups';
+      input.value = shared.filter;
+      input.onDidChangeValue(value => setFilter(value.trim()));
+      input.onDidAccept(() => input.hide());
+      input.onDidHide(() => input.dispose());
+      input.show();
+    }),
+    vscode.commands.registerCommand('run-my-tasks.clearSearch', () => setFilter('')),
+  );
+
   // Refresh button in view title
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.refreshTasksView', () => refreshAll()),
   );
 
-  // Open tasks.json button in view title
+  const openVscodeFile = async (fileName: string): Promise<void> => {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders?.length) {
+      vscode.window.showErrorMessage('No workspace folder open.');
+      return;
+    }
+    const uri = vscode.Uri.joinPath(folders[0].uri, '.vscode', fileName);
+    try {
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+    } catch {
+      vscode.window.showErrorMessage(`${fileName} not found in .vscode/`);
+    }
+  };
+
+  // Open tasks.json / launch.json buttons in view title
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.openTasksJson', async () => {
-      const folders = vscode.workspace.workspaceFolders;
-      if (!folders?.length) {
-        vscode.window.showErrorMessage('No workspace folder open.');
-        return;
-      }
-      const uri = vscode.Uri.joinPath(folders[0].uri, '.vscode', 'tasks.json');
-      try {
-        const doc = await vscode.workspace.openTextDocument(uri);
-        await vscode.window.showTextDocument(doc);
-      } catch {
-        vscode.window.showErrorMessage('tasks.json not found in .vscode/');
-      }
-    }),
+    vscode.commands.registerCommand('run-my-tasks.openTasksJson', () => openVscodeFile('tasks.json')),
+    vscode.commands.registerCommand('run-my-tasks.openLaunchJson', () => openVscodeFile('launch.json')),
   );
 
   // Run inline button
@@ -146,6 +223,19 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         vscode.window.showInformationMessage(`No terminal found for task "${name}".`);
       }
     }),
+  );
+
+  // Start / stop inline buttons on a launch configuration, and Run Without Debugging in its context menu
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.debugLaunchFromTree', (item: LaunchTreeItem) =>
+      startLaunch(item.launch),
+    ),
+    vscode.commands.registerCommand('run-my-tasks.runLaunchFromTree', (item: LaunchTreeItem) =>
+      startLaunch(item.launch, true),
+    ),
+    vscode.commands.registerCommand('run-my-tasks.stopLaunchFromTree', (item: LaunchTreeItem) =>
+      stopLaunch(item.launch),
+    ),
   );
 
   // Create virtual group
@@ -228,9 +318,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  // Add task to group (palette or context menu on task)
+  // Add task or launch configuration to group (palette or context menu on the item)
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.addTaskToGroup', async (item?: TaskTreeItem) => {
+    vscode.commands.registerCommand('run-my-tasks.addTaskToGroup', async (item?: EntryTreeItem) => {
       const groups = loadGroups();
       if (groups.length === 0) {
         const action = await vscode.window.showInformationMessage(
@@ -243,50 +333,54 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return;
       }
 
-      let taskName: string | undefined;
+      let entry: GroupEntry | undefined;
       if (item) {
-        taskName = item.task.name;
+        entry = item;
       } else {
         const allTasks = await vscode.tasks.fetchTasks();
         const pick = await vscode.window.showQuickPick(
-          allTasks.map(t => ({ label: t.name, description: t.source })),
-          { placeHolder: 'Select task to add' },
+          [
+            ...allTasks.map(t => entryPickItem('tasks', t.name, t.source)),
+            ...getLaunchConfigs().map(c => entryPickItem('launches', c.name, LAUNCH_LABEL)),
+          ],
+          { placeHolder: 'Select task or launch configuration to add' },
         );
-        taskName = pick?.label;
+        entry = pick?.entry;
       }
-      if (!taskName) { return; }
+      if (!entry) { return; }
 
       const groupPick = await vscode.window.showQuickPick(
         groups.map(g => g.name),
-        { placeHolder: `Add "${taskName}" to group` },
+        { placeHolder: `Add "${entry.name}" to group` },
       );
       if (!groupPick) { return; }
 
-      const task = taskName;
+      const { kind, name } = entry;
       await saveGroups(groups.map(g =>
-        g.name === groupPick && !g.tasks.includes(task)
-          ? { ...g, tasks: [...g.tasks, task] }
+        g.name === groupPick && !groupEntries(g, kind).includes(name)
+          ? { ...g, [kind]: [...groupEntries(g, kind), name] }
           : g,
       ));
     }),
   );
 
-  // Remove task from group (palette or context menu on task inside group)
+  // Remove task or launch configuration from group (palette or context menu on the item inside group)
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.removeTaskFromGroup', async (item?: TaskTreeItem) => {
+    vscode.commands.registerCommand('run-my-tasks.removeTaskFromGroup', async (item?: EntryTreeItem) => {
       const groups = loadGroups();
-
-      if (item?.groupName) {
-        const { groupName, task } = item;
-        await saveGroups(groups.map(g =>
+      const remove = (groupName: string, { kind, name }: GroupEntry): Promise<void> =>
+        saveGroups(groups.map(g =>
           g.name === groupName
-            ? { ...g, tasks: g.tasks.filter(t => t !== task.name) }
+            ? { ...g, [kind]: groupEntries(g, kind).filter(e => e !== name) }
             : g,
         ));
+
+      if (item?.groupName) {
+        await remove(item.groupName, item);
         return;
       }
 
-      const groupsWithTasks = groups.filter(g => g.tasks.length > 0);
+      const groupsWithTasks = groups.filter(g => g.tasks.length + groupEntries(g, 'launches').length > 0);
       if (groupsWithTasks.length === 0) {
         vscode.window.showInformationMessage('No tasks in any group.');
         return;
@@ -299,46 +393,45 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       if (!groupPick) { return; }
 
       const group = groups.find(g => g.name === groupPick)!;
-      const taskPick = await vscode.window.showQuickPick(
-        group.tasks,
-        { placeHolder: 'Select task to remove' },
+      const entryPick = await vscode.window.showQuickPick(
+        [
+          ...group.tasks.map(name => entryPickItem('tasks', name)),
+          ...groupEntries(group, 'launches').map(name => entryPickItem('launches', name, LAUNCH_LABEL)),
+        ],
+        { placeHolder: 'Select task or launch configuration to remove' },
       );
-      if (!taskPick) { return; }
+      if (!entryPick) { return; }
 
-      await saveGroups(groups.map(g =>
-        g.name === groupPick
-          ? { ...g, tasks: g.tasks.filter(t => t !== taskPick) }
-          : g,
-      ));
+      await remove(groupPick, entryPick.entry);
     }),
   );
 
-  // Move task up/down within its group
+  // Move task or launch configuration up/down within its group, among the entries of its kind
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.moveTaskUp', async (item: TaskTreeItem) => {
+    vscode.commands.registerCommand('run-my-tasks.moveTaskUp', async (item: EntryTreeItem) => {
       if (!item.groupName) { return; }
       const groups = loadGroups();
       const group = groups.find(g => g.name === item.groupName);
       if (!group) { return; }
-      const idx = group.tasks.indexOf(item.task.name);
+      const entries = [...groupEntries(group, item.kind)];
+      const idx = entries.indexOf(item.name);
       if (idx <= 0) { return; }
-      const newTasks = [...group.tasks];
-      [newTasks[idx - 1], newTasks[idx]] = [newTasks[idx], newTasks[idx - 1]];
-      await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, tasks: newTasks } : g));
+      [entries[idx - 1], entries[idx]] = [entries[idx], entries[idx - 1]];
+      await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, [item.kind]: entries } : g));
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.moveTaskDown', async (item: TaskTreeItem) => {
+    vscode.commands.registerCommand('run-my-tasks.moveTaskDown', async (item: EntryTreeItem) => {
       if (!item.groupName) { return; }
       const groups = loadGroups();
       const group = groups.find(g => g.name === item.groupName);
       if (!group) { return; }
-      const idx = group.tasks.indexOf(item.task.name);
-      if (idx < 0 || idx >= group.tasks.length - 1) { return; }
-      const newTasks = [...group.tasks];
-      [newTasks[idx], newTasks[idx + 1]] = [newTasks[idx + 1], newTasks[idx]];
-      await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, tasks: newTasks } : g));
+      const entries = [...groupEntries(group, item.kind)];
+      const idx = entries.indexOf(item.name);
+      if (idx < 0 || idx >= entries.length - 1) { return; }
+      [entries[idx], entries[idx + 1]] = [entries[idx + 1], entries[idx]];
+      await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, [item.kind]: entries } : g));
     }),
   );
 
@@ -365,7 +458,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  // Run all idle tasks in group
+  // Run all idle tasks and launch configurations in group
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.runGroup', async (item?: VirtualGroupItem) => {
       let group: VirtualGroup | undefined;
@@ -399,10 +492,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       for (const task of toRun) {
         await vscode.tasks.executeTask(task);
       }
+
+      const launches = groupEntries(group, 'launches');
+      const runningLaunches = runningLaunchNames();
+      for (const config of getLaunchConfigs()) {
+        if (launches.includes(config.name) && !isLaunchRunning(config, runningLaunches)) {
+          await startLaunch(config);
+        }
+      }
     }),
   );
 
-  // Stop all running tasks in group
+  // Stop all running tasks and launch configurations in group
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.stopGroup', async (item?: VirtualGroupItem) => {
       let group: VirtualGroup | undefined;
@@ -430,6 +531,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           execution.terminate();
         }
       }
+
+      const launches = groupEntries(group, 'launches');
+      await Promise.all(getLaunchConfigs().filter(c => launches.includes(c.name)).map(stopLaunch));
     }),
   );
 

@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as launchConfigs from '../launchConfigs';
 import { createStatusBarItem } from '../statusBar';
 import { showTaskPicker } from '../taskPicker';
 import {
@@ -7,10 +8,13 @@ import {
   cancel,
   captureMessages,
   disposeAllTerminals,
+  pick,
   restoreStubs,
   runningNames,
+  stopAllDebugSessions,
   stopAllTasks,
   stub,
+  waitForDebugging,
   waitForRunning,
 } from './helpers';
 
@@ -29,6 +33,7 @@ suite('Task picker', () => {
   teardown(async () => {
     restoreStubs();
     await stopAllTasks();
+    await stopAllDebugSessions();
     disposeAllTerminals();
   });
 
@@ -50,6 +55,23 @@ suite('Task picker', () => {
     assert.strictEqual(workspace[0].detail, undefined, 'a compound task has no command to show');
   });
 
+  test('lists the launch configurations last, in launch.json order, with their type as detail', async () => {
+    const offered = answerQuickPicks(cancel) as vscode.QuickPickItem[][];
+    await showTaskPicker();
+    const [items] = offered;
+
+    const start = items.findIndex(i => i.label === 'Launch Configurations');
+    assert.strictEqual(items[start].kind, vscode.QuickPickItemKind.Separator);
+    assert.deepStrictEqual(
+      items.slice(start + 1).map(i => [i.label, i.detail]),
+      [
+        ['$(debug-alt) debug-idle', 'node launch'],
+        ['$(debug-alt) debug-idle-2', 'node launch'],
+        ['$(debug-alt) debug-both', 'compound: debug-idle, debug-idle-2'],
+      ],
+    );
+  });
+
   test('hides the detail line when runMyTasks.showTaskType is off', async () => {
     withSettings({ showTaskType: false });
     const offered = answerQuickPicks(cancel) as vscode.QuickPickItem[][];
@@ -64,15 +86,23 @@ suite('Task picker', () => {
     await waitForRunning('long-running');
   });
 
+  test('starts the picked launch configuration', async () => {
+    answerQuickPicks(pick('$(debug-alt) debug-idle'));
+    await showTaskPicker();
+    await waitForDebugging('debug-idle');
+    assert.deepStrictEqual(runningNames(), []);
+  });
+
   test('runs nothing when cancelled', async () => {
     answerQuickPicks(cancel);
     await showTaskPicker();
     assert.deepStrictEqual(runningNames(), []);
   });
 
-  test('tells the user when there are no tasks', async () => {
+  test('tells the user when there are no tasks and no launch configurations', async () => {
     const messages = captureMessages();
     stub(vscode.tasks, 'fetchTasks', (async () => []) as typeof vscode.tasks.fetchTasks);
+    stub(launchConfigs, 'getLaunchConfigs', () => []);
     await showTaskPicker();
     assert.deepStrictEqual(messages.info, ['No tasks found. Add tasks to .vscode/tasks.json to get started.']);
   });
