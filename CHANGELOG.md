@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Groups are shared by all the windows opened on the same git repository, worktrees included; the groups saved so far in a workspace move to its repository. Workspaces outside a git repository and multi-root workspaces keep their own groups
+
 ## [0.5.0] - 2026-10-13
 
 ### Added

@@ -10,7 +10,7 @@ A VS Code extension that gives you fast access to all workspace tasks and launch
 
 **Side panel** — a "Run My Tasks" view in the Activity Bar is split into three sections:
 
-- **Groups** — virtual groups you create to organize and batch-run tasks and launch configurations. Each group has inline **Run All** and **Stop All** buttons. Tasks within a group can be reordered with **Move Up** / **Move Down** (right-click menu) or by dragging. Groups themselves can also be reordered the same way.
+- **Groups** — virtual groups you create to organize and batch-run tasks and launch configurations. Each group has inline **Run All** and **Stop All** buttons. Tasks within a group can be reordered with **Move Up** / **Move Down** (right-click menu) or by dragging. Groups themselves can also be reordered the same way. Groups belong to the git repository: every window opened on it, worktrees included, shows the same groups.
 - **Tasks** — all workspace tasks listed by source. Tasks show a green spinning indicator while running and have inline **Run** / **Stop** buttons. Right-click a task to add it to a group.
 - **Launch Configurations** — the configurations and compounds of `launch.json`. They show the same indicator while a debug session is running and have inline **Start Debugging** / **Stop** buttons; right-click one to **Run Without Debugging** or to add it to a group.
 

@@ -290,7 +290,7 @@ suite('Group commands', () => {
     await given([{ name: 'Dev', tasks: ['quick'] }]);
     answerInputBox('Build');
     await run('createGroup');
-    // createGroup reads from workspaceState, so the second group proves the first was persisted
+    // createGroup reads from the stored state, so the second group proves the first was persisted
     assert.deepStrictEqual(names(), ['Dev', 'Build']);
   });
 });

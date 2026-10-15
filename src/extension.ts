@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { createGroupStorage } from './groupStorage';
 import {
   getLaunchConfigs,
   isLaunchRunning,
@@ -26,8 +27,6 @@ import {
   VirtualGroup,
   VirtualGroupItem,
 } from './taskTreeProvider';
-
-const GROUPS_KEY = 'virtualGroups';
 
 // Tells launch configurations from tasks in the pickers listing both
 const LAUNCH_LABEL = 'Launch Configuration';
@@ -62,11 +61,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const tasksProvider = new TasksTreeProvider(shared);
   const launchProvider = new LaunchTreeProvider(shared);
 
-  const loadGroups = (): VirtualGroup[] =>
-    context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
+  const groupStorage = createGroupStorage(context);
+  const loadGroups = (): VirtualGroup[] => groupStorage.load();
 
   const saveGroups = async (groups: VirtualGroup[]): Promise<void> => {
-    await context.workspaceState.update(GROUPS_KEY, groups);
+    await groupStorage.save(groups);
     shared.virtualGroups = groups;
     groupsProvider.refresh();
   };
@@ -124,9 +123,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     shared.pendingStop.delete(name);
   };
 
-  // Load persisted groups on startup
-  shared.virtualGroups = context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
-  groupsProvider.refresh();
+  // Load persisted groups on startup, and again when the window gets the focus:
+  // the other windows on the same repository (worktrees included) may have changed them
+  const reloadGroups = (): void => {
+    shared.virtualGroups = loadGroups();
+    groupsProvider.refresh();
+  };
+  reloadGroups();
+  context.subscriptions.push(
+    vscode.window.onDidChangeWindowState(state => {
+      if (state.focused) { reloadGroups(); }
+    }),
+  );
 
   // Refresh both views on task lifecycle events
   context.subscriptions.push(
