@@ -175,6 +175,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     vscode.commands.registerCommand('run-my-tasks.refreshTasksView', () => refreshAll()),
   );
 
+  // Collapse All / Expand All buttons in the title of the Groups and Tasks views
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.collapseAllGroups', () => groupsProvider.setAllExpanded(false)),
+    vscode.commands.registerCommand('run-my-tasks.expandAllGroups', () => groupsProvider.setAllExpanded(true)),
+    vscode.commands.registerCommand('run-my-tasks.collapseAllTasks', () => tasksProvider.setAllExpanded(false)),
+    vscode.commands.registerCommand('run-my-tasks.expandAllTasks', () => tasksProvider.setAllExpanded(true)),
+  );
+
   const openVscodeFile = async (fileName: string): Promise<void> => {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders?.length) {

@@ -33,12 +33,32 @@ function matchesFilter(filter: string, ...texts: string[]): boolean {
   return filter.toLowerCase().split(/\s+/).every(term => haystack.includes(term));
 }
 
+// Expand state forced on every collapsible node of a view by Expand All / Collapse All.
+// VS Code keeps the expand state of the nodes it already knows, keyed by their id, and only
+// honors collapsibleState on new nodes: each forced change gives the nodes a new id
+export class ExpandState {
+  private generation = 0;
+  private state = vscode.TreeItemCollapsibleState.Expanded;
+
+  setAll(expanded: boolean): void {
+    this.state = expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+    this.generation++;
+  }
+
+  apply(item: vscode.TreeItem, key: string): void {
+    item.id = `${this.generation}:${key}`;
+    item.collapsibleState = this.state;
+  }
+}
+
 export class VirtualGroupItem extends vscode.TreeItem {
   constructor(
     public readonly group: VirtualGroup,
     runningCount: number,
+    expandState?: ExpandState,
   ) {
     super(group.name, vscode.TreeItemCollapsibleState.Expanded);
+    expandState?.apply(this, group.name);
     this.iconPath = new vscode.ThemeIcon('layers');
     this.description = runningCount > 0 ? `${runningCount} running` : undefined;
     this.contextValue = 'virtualGroup';
@@ -49,8 +69,10 @@ export class TaskGroupItem extends vscode.TreeItem {
   constructor(
     public readonly source: string,
     runningCount: number,
+    expandState?: ExpandState,
   ) {
     super(source, vscode.TreeItemCollapsibleState.Expanded);
+    expandState?.apply(this, source);
     this.iconPath = new vscode.ThemeIcon(
       source === 'Workspace' ? 'file-code' : 'package',
     );
@@ -127,7 +149,7 @@ function getRunningNames(pendingStop: Set<string>): Set<string> {
   );
 }
 
-function buildGroups(tasks: vscode.Task[], runningNames: Set<string>): TaskGroupItem[] {
+function buildGroups(tasks: vscode.Task[], runningNames: Set<string>, expandState: ExpandState): TaskGroupItem[] {
   const groups = new Map<string, number>();
   for (const t of tasks) {
     const prev = groups.get(t.source) ?? 0;
@@ -140,7 +162,7 @@ function buildGroups(tasks: vscode.Task[], runningNames: Set<string>): TaskGroup
     return a.localeCompare(b);
   });
 
-  return sorted.map(source => new TaskGroupItem(source, groups.get(source) ?? 0));
+  return sorted.map(source => new TaskGroupItem(source, groups.get(source) ?? 0, expandState));
 }
 
 function buildTaskItems(tasks: vscode.Task[], runningNames: Set<string>, groupName?: string): TaskTreeItem[] {
@@ -289,6 +311,7 @@ export class GroupsDragController implements vscode.TreeDragAndDropController<Gr
 }
 
 export class GroupsTreeProvider implements vscode.TreeDataProvider<GroupsNode> {
+  readonly expandState = new ExpandState();
   private _onDidChangeTreeData = new vscode.EventEmitter<GroupsNode | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
@@ -296,6 +319,12 @@ export class GroupsTreeProvider implements vscode.TreeDataProvider<GroupsNode> {
 
   refresh(): void {
     this._onDidChangeTreeData.fire();
+  }
+
+  // Expand All / Collapse All buttons
+  setAllExpanded(expanded: boolean): void {
+    this.expandState.setAll(expanded);
+    this.refresh();
   }
 
   getTreeItem(element: GroupsNode): vscode.TreeItem {
@@ -317,7 +346,7 @@ export class GroupsTreeProvider implements vscode.TreeDataProvider<GroupsNode> {
       return this.shared.virtualGroups
         .map(g => ({ group: g, entries: this.entryItems(g) }))
         .filter(({ group, entries }) => !filter || entries.some(e => matchesFilter(filter, group.name, e.name)))
-        .map(({ group, entries }) => new VirtualGroupItem(group, entries.filter(e => e.running).length));
+        .map(({ group, entries }) => new VirtualGroupItem(group, entries.filter(e => e.running).length, this.expandState));
     }
 
     if (element instanceof VirtualGroupItem) {
@@ -350,6 +379,7 @@ export class GroupsTreeProvider implements vscode.TreeDataProvider<GroupsNode> {
 type TasksNode = TaskGroupItem | TaskTreeItem;
 
 export class TasksTreeProvider implements vscode.TreeDataProvider<TasksNode> {
+  readonly expandState = new ExpandState();
   private _onDidChangeTreeData = new vscode.EventEmitter<TasksNode | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
@@ -357,6 +387,12 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TasksNode> {
 
   refresh(): void {
     this._onDidChangeTreeData.fire();
+  }
+
+  // Expand All / Collapse All buttons
+  setAllExpanded(expanded: boolean): void {
+    this.expandState.setAll(expanded);
+    this.refresh();
   }
 
   getTreeItem(element: TasksNode): vscode.TreeItem {
@@ -376,7 +412,7 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TasksNode> {
     const tasks = this.shared.cachedTasks.filter(t => matchesFilter(this.shared.filter, t.source, t.name));
 
     if (!element) {
-      return buildGroups(tasks, runningNames);
+      return buildGroups(tasks, runningNames, this.expandState);
     }
 
     if (element instanceof TaskGroupItem) {

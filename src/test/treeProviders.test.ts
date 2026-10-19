@@ -76,4 +76,31 @@ suite('Tree providers', () => {
     assert.strictEqual(child.running, false);
     assert.strictEqual(root.description, undefined);
   });
+  test('Collapse All / Expand All give the groups a new id with the forced state, kept on refresh', async () => {
+    const shared = createSharedState();
+    shared.virtualGroups = [{ name: 'Dev', tasks: ['quick'] }, { name: 'Ops', tasks: ['long-running'] }];
+    const provider = new GroupsTreeProvider(shared);
+
+    const initial = await provider.getChildren();
+    assert.ok(initial.every(g => g.collapsibleState === vscode.TreeItemCollapsibleState.Expanded));
+
+    provider.setAllExpanded(false);
+    const collapsed = await provider.getChildren();
+    assert.ok(collapsed.every(g => g.collapsibleState === vscode.TreeItemCollapsibleState.Collapsed));
+    assert.notDeepStrictEqual(collapsed.map(g => g.id), initial.map(g => g.id));
+    assert.deepStrictEqual((await provider.getChildren()).map(g => g.id), collapsed.map(g => g.id));
+
+    provider.setAllExpanded(true);
+    const expanded = await provider.getChildren();
+    assert.ok(expanded.every(g => g.collapsibleState === vscode.TreeItemCollapsibleState.Expanded));
+    assert.notDeepStrictEqual(expanded.map(g => g.id), collapsed.map(g => g.id));
+  });
+
+  test('Collapse All on the Tasks view collapses the task sources', async () => {
+    const provider = new TasksTreeProvider(createSharedState());
+    provider.setAllExpanded(false);
+    const roots = await provider.getChildren();
+    assert.ok(roots.length > 0);
+    assert.ok(roots.every(g => g.collapsibleState === vscode.TreeItemCollapsibleState.Collapsed));
+  });
 });

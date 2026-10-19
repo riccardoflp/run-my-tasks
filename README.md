@@ -57,6 +57,8 @@ All settings are under the `runMyTasks` namespace and can be changed in **Settin
 | `Run My Tasks: Search...` | — | Filter the side panel as you type |
 | `Run My Tasks: Clear Search` | — | Remove the side panel filter |
 | `Run My Tasks: Refresh` | — | Refresh the side panel task list |
+| `Run My Tasks: Collapse All Groups` / `Expand All Groups` | — | Collapse or expand every group in the **Groups** view |
+| `Run My Tasks: Collapse All Tasks` / `Expand All Tasks` | — | Collapse or expand every task source in the **Tasks** view |
 | `Run My Tasks: Create Group` | — | Create a new virtual group |
 | `Run My Tasks: Rename Group` | `F2` (when group focused) | Rename the selected group |
 | `Run My Tasks: Delete Group` | — | Delete the selected group |

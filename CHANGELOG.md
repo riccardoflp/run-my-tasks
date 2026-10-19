@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Collapse All** and **Expand All** buttons in the title of the **Groups** and **Tasks** views
+
 ## [0.6.0] - 2026-10-15
 
 ### Changed

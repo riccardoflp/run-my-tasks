@@ -193,6 +193,30 @@
         "title": "Open launch.json",
         "icon": "$(go-to-file)",
         "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.collapseAllGroups",
+        "title": "Collapse All Groups",
+        "icon": "$(collapse-all)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.expandAllGroups",
+        "title": "Expand All Groups",
+        "icon": "$(expand-all)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.collapseAllTasks",
+        "title": "Collapse All Tasks",
+        "icon": "$(collapse-all)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.expandAllTasks",
+        "title": "Expand All Tasks",
+        "icon": "$(expand-all)",
+        "category": "Run My Tasks"
       }
     ],
     "keybindings": [
@@ -248,19 +272,39 @@
           "group": "navigation@3"
         },
         {
+          "command": "run-my-tasks.collapseAllGroups",
+          "when": "view == run-my-tasks.groupsView",
+          "group": "navigation@4"
+        },
+        {
+          "command": "run-my-tasks.expandAllGroups",
+          "when": "view == run-my-tasks.groupsView",
+          "group": "navigation@5"
+        },
+        {
+          "command": "run-my-tasks.collapseAllTasks",
+          "when": "view == run-my-tasks.tasksView",
+          "group": "navigation@4"
+        },
+        {
+          "command": "run-my-tasks.expandAllTasks",
+          "when": "view == run-my-tasks.tasksView",
+          "group": "navigation@5"
+        },
+        {
           "command": "run-my-tasks.openTasksJson",
           "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView",
-          "group": "navigation@4"
+          "group": "navigation@6"
         },
         {
           "command": "run-my-tasks.openLaunchJson",
           "when": "view == run-my-tasks.launchView",
-          "group": "navigation@4"
+          "group": "navigation@6"
         },
         {
           "command": "run-my-tasks.refreshTasksView",
           "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView || view == run-my-tasks.launchView",
-          "group": "navigation@5"
+          "group": "navigation@7"
         }
       ],
       "view/item/context": [
