@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { getLaunchConfigs, LaunchConfig, startLaunch } from './launchConfigs';
+import { runTask } from './taskTerminals';
 
 interface TaskQuickPickItem extends vscode.QuickPickItem {
   task: vscode.Task;
@@ -92,7 +93,7 @@ export async function showTaskPicker(): Promise<void> {
   }
 
   try {
-    await vscode.tasks.executeTask((selected as TaskQuickPickItem).task);
+    await runTask((selected as TaskQuickPickItem).task);
   } catch (err) {
     vscode.window.showErrorMessage(`Failed to run task "${(selected as TaskQuickPickItem).task.name}": ${err}`);
   }

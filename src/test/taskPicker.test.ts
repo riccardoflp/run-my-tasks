@@ -16,18 +16,8 @@ import {
   stub,
   waitForDebugging,
   waitForRunning,
+  withSettings,
 } from './helpers';
-
-function withSettings(values: Record<string, unknown>): void {
-  const original = vscode.workspace.getConfiguration;
-  stub(vscode.workspace, 'getConfiguration', ((section?: string) => {
-    const config = original(section);
-    return {
-      ...config,
-      get: (key: string, fallback?: unknown) => (key in values ? values[key] : config.get(key, fallback)),
-    };
-  }) as typeof vscode.workspace.getConfiguration);
-}
 
 suite('Task picker', () => {
   teardown(async () => {

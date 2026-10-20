@@ -10,6 +10,7 @@ import {
 } from './launchConfigs';
 import { createStatusBarItem } from './statusBar';
 import { showTaskPicker } from './taskPicker';
+import { findTaskTerminal, runTask, TerminalLocation, trackTaskTerminals } from './taskTerminals';
 import {
   createSharedState,
   EntryKind,
@@ -138,6 +139,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
   // Refresh both views on task lifecycle events
   context.subscriptions.push(
+    trackTaskTerminals(),
     vscode.tasks.onDidStartTask(e => {
       shared.pendingStop.delete(e.execution.task.name);
       refreshAll();
@@ -204,13 +206,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     vscode.commands.registerCommand('run-my-tasks.openLaunchJson', () => openVscodeFile('launch.json')),
   );
 
-  // Run inline button
+  const runTaskItem = (item: TaskTreeItem, location?: TerminalLocation): void => {
+    runTask(item.task, location).catch((err: unknown) =>
+      vscode.window.showErrorMessage(`Failed to run task "${item.task.name}": ${err}`),
+    );
+  };
+
+  // Run inline button, and Run in Editor / Run in Panel in the context menu of a task
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.runTaskFromTree', (item: TaskTreeItem) => {
-      Promise.resolve(vscode.tasks.executeTask(item.task)).catch((err: unknown) =>
-        vscode.window.showErrorMessage(`Failed to run task "${item.task.name}": ${err}`),
-      );
-    }),
+    vscode.commands.registerCommand('run-my-tasks.runTaskFromTree', (item: TaskTreeItem) => runTaskItem(item)),
+    vscode.commands.registerCommand('run-my-tasks.runTaskInEditor', (item: TaskTreeItem) => runTaskItem(item, 'editor')),
+    vscode.commands.registerCommand('run-my-tasks.runTaskInPanel', (item: TaskTreeItem) => runTaskItem(item, 'panel')),
   );
 
   // Stop inline button on running task
@@ -227,12 +233,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Click on a running task: focus the terminal it runs in
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.focusTaskTerminal', (item: TaskTreeItem) => {
-      // The API has no link from TaskExecution to Terminal: match by the terminal title
-      // VS Code gives task terminals ("Task - <name>", or just "<name>" in newer versions)
       const name = item.task.name;
-      const terminal =
-        vscode.window.terminals.find(t => t.name === `Task - ${name}`) ??
-        vscode.window.terminals.find(t => t.name === name);
+      const terminal = findTaskTerminal(name);
       if (terminal) {
         terminal.show();
       } else {
@@ -506,7 +508,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         group!.tasks.includes(t.name) && !runningNames.has(t.name),
       );
       for (const task of toRun) {
-        await vscode.tasks.executeTask(task);
+        await runTask(task);
       }
 
       const launches = groupEntries(group, 'launches');

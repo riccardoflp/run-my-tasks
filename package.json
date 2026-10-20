@@ -77,6 +77,16 @@
         "category": "Run My Tasks"
       },
       {
+        "command": "run-my-tasks.runTaskInEditor",
+        "title": "Run in Editor",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.runTaskInPanel",
+        "title": "Run in Panel",
+        "category": "Run My Tasks"
+      },
+      {
         "command": "run-my-tasks.stopTaskFromTree",
         "title": "Stop Task",
         "icon": "$(stop)",
@@ -239,6 +249,14 @@
           "when": "false"
         },
         {
+          "command": "run-my-tasks.runTaskInEditor",
+          "when": "false"
+        },
+        {
+          "command": "run-my-tasks.runTaskInPanel",
+          "when": "false"
+        },
+        {
           "command": "run-my-tasks.debugLaunchFromTree",
           "when": "false"
         },
@@ -349,6 +367,16 @@
           "group": "inline"
         },
         {
+          "command": "run-my-tasks.runTaskInEditor",
+          "when": "(viewItem == idleTask || viewItem == idleTaskInGroup) && config.runMyTasks.terminalLocation != editor",
+          "group": "0_run"
+        },
+        {
+          "command": "run-my-tasks.runTaskInPanel",
+          "when": "(viewItem == idleTask || viewItem == idleTaskInGroup) && config.runMyTasks.terminalLocation == editor",
+          "group": "0_run"
+        },
+        {
           "command": "run-my-tasks.runLaunchFromTree",
           "when": "viewItem == idleLaunch || viewItem == idleLaunchInGroup",
           "group": "0_run"
@@ -431,6 +459,47 @@
           "type": "boolean",
           "default": true,
           "description": "Show the task command, or the launch configuration type, as a detail line in the picker."
+        },
+        "runMyTasks.terminalLocation": {
+          "type": "string",
+          "enum": [
+            "panel",
+            "editor"
+          ],
+          "enumDescriptions": [
+            "Open the terminals of the tasks in the panel, as VS Code does.",
+            "Open the terminals of the tasks in the editor area, as editor tabs."
+          ],
+          "default": "panel",
+          "description": "Where the terminals of the tasks started from Run My Tasks open. The right-click menu of a task can run it in the other place."
+        },
+        "runMyTasks.editorTerminalLayout": {
+          "type": "string",
+          "enum": [
+            "split",
+            "group",
+            "tab"
+          ],
+          "enumDescriptions": [
+            "Split the editor area: each terminal opens in its own editor group, side by side with the others, to the right of the files you are working on.",
+            "Open all the terminals as tabs of one editor group, to the right of the files you are working on.",
+            "Open the terminals as full tabs in the editor group you are working in, without creating a new group."
+          ],
+          "default": "split",
+          "description": "How the terminals of the tasks open in the editor area, when they open there."
+        },
+        "runMyTasks.editorTerminalPosition": {
+          "type": "string",
+          "enum": [
+            "right",
+            "below"
+          ],
+          "enumDescriptions": [
+            "Split the editor area vertically: the terminals open to the right of the files you are working on.",
+            "Split the editor area horizontally: the terminals open below the files you are working on."
+          ],
+          "default": "right",
+          "markdownDescription": "Where the terminals open with respect to the files you are working on, when `#runMyTasks.editorTerminalLayout#` is `split` or `group`. With `split` the terminals stay side by side, next to each other."
         }
       }
     }
