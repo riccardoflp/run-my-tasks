@@ -10,3 +10,4 @@ node_modules/**
 .vscode-test.mjs
 out/test/**
 test-fixtures/**
+.claude/**
