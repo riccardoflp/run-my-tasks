@@ -503,7 +503,7 @@
             "tab"
           ],
           "enumDescriptions": [
-            "Split the editor area: each terminal opens in its own editor group, side by side with the others, to the right of the files you are working on.",
+            "Split the editor area: each terminal opens in its own editor group, after the files you are working on and the other terminals, in the direction of `#runMyTasks.editorTerminalPosition#`.",
             "Open all the terminals as tabs of one editor group, to the right of the files you are working on.",
             "Open the terminals as full tabs in the editor group you are working in, without creating a new group."
           ],
@@ -517,11 +517,11 @@
             "below"
           ],
           "enumDescriptions": [
-            "Split the editor area vertically: the terminals open to the right of the files you are working on.",
-            "Split the editor area horizontally: the terminals open below the files you are working on."
+            "The terminals open to the right of the files you are working on; with the `split` layout, each one to the right of the previous one.",
+            "The terminals open below the files you are working on; with the `split` layout, each one below the previous one."
           ],
           "default": "right",
-          "markdownDescription": "Where the terminals open with respect to the files you are working on, when `#runMyTasks.editorTerminalLayout#` is `split` or `group`. With `split` the terminals stay side by side, next to each other."
+          "markdownDescription": "Where the terminals open with respect to the files you are working on, when `#runMyTasks.editorTerminalLayout#` is `split` or `group`. With `split` every terminal is split in this direction, after the previous one."
         }
       }
     }

@@ -16,7 +16,7 @@ A VS Code extension that gives you fast access to all workspace tasks and launch
 
 Click a running task to focus the terminal it is running in, or a running launch configuration to show the Debug Console.
 
-**Terminals in the editor** — the terminals of the tasks started from Run My Tasks can open in the editor area instead of the panel (`runMyTasks.terminalLocation`): side by side, each in its own split to the right of the files you are working on, all together as tabs of one group on the right, or as full tabs of the current group (`runMyTasks.editorTerminalLayout`); to the right of the files or below them (`runMyTasks.editorTerminalPosition`). Right-click a task to **Run in Editor** or **Run in Panel**, whichever is not the default.
+**Terminals in the editor** — the terminals of the tasks started from Run My Tasks can open in the editor area instead of the panel (`runMyTasks.terminalLocation`): each in its own split after the files you are working on, all together as tabs of one group next to the files, or as full tabs of the current group (`runMyTasks.editorTerminalLayout`); the splits go to the right or downwards (`runMyTasks.editorTerminalPosition`). Right-click a task to **Run in Editor** or **Run in Panel**, whichever is not the default.
 
 **Launch configurations in groups** — a group lists its tasks first, then its launch configurations, and **Run All** starts them in that order: handy to start the servers and then attach the debugger. A compound counts as running while all its configurations are.
 
@@ -43,8 +43,8 @@ All settings are under the `runMyTasks` namespace and can be changed in **Settin
 | `runMyTasks.statusBarPriority` | `number` | `100` | Position priority within the chosen side. Higher numbers place the button further left on the Left side (VS Code default behavior). |
 | `runMyTasks.showTaskType` | `boolean` | `true` | Show the shell command or npm script (the debugger type for launch configurations) as a detail line below each name in the picker. Disable if you prefer a cleaner list. |
 | `runMyTasks.terminalLocation` | `"panel"` \| `"editor"` | `"panel"` | Where the terminals of the tasks started from Run My Tasks (side panel, picker, **Run Group**) open. Tasks whose `presentation.reveal` is not `always` keep their terminal in the panel. |
-| `runMyTasks.editorTerminalLayout` | `"split"` \| `"group"` \| `"tab"` | `"split"` | When the terminals open in the editor: `split` opens each one in its own editor group, side by side with the others, to the right of the files you are working on; `group` opens them all as tabs of one group on the right of the files; `tab` opens them as full tabs of the current group, without creating a new group. |
-| `runMyTasks.editorTerminalPosition` | `"right"` \| `"below"` | `"right"` | With the `split` and `group` layouts, whether the terminals open to the right of the files (vertical split) or below them (horizontal split). With `split` the terminals stay side by side, next to each other. |
+| `runMyTasks.editorTerminalLayout` | `"split"` \| `"group"` \| `"tab"` | `"split"` | When the terminals open in the editor: `split` opens each one in its own editor group, after the files you are working on and the other terminals; `group` opens them all as tabs of one group next to the files; `tab` opens them as full tabs of the current group, without creating a new group. |
+| `runMyTasks.editorTerminalPosition` | `"right"` \| `"below"` | `"right"` | With the `split` and `group` layouts, whether the terminals open to the right of the files or below them. With `split` every terminal is split in this direction: `right` puts them all side by side, `below` stacks them all one under the other. |
 
 ### Example `settings.json`
 

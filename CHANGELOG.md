@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Collapse All** and **Expand All** buttons in the title of the **Groups** and **Tasks** views
-- Task terminals can open in the editor area: the `runMyTasks.terminalLocation` setting picks the panel or the editor, and `runMyTasks.editorTerminalLayout` whether they open side by side, each in its own split next to the files, all together in one group next to the files, or as full tabs of the current group; `runMyTasks.editorTerminalPosition` puts them to the right of the files or below them
+- Task terminals can open in the editor area: the `runMyTasks.terminalLocation` setting picks the panel or the editor, and `runMyTasks.editorTerminalLayout` whether they open each in its own split after the files, all together in one group next to the files, or as full tabs of the current group; `runMyTasks.editorTerminalPosition` splits to the right or downwards
 - **Run in Editor** / **Run in Panel** in the right-click menu of a task, to run it in the place that is not the default
 
 ## [0.6.0] - 2026-10-15

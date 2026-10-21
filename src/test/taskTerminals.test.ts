@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { terminalsPlaced } from '../taskTerminals';
+import { runTask, terminalsPlaced } from '../taskTerminals';
 import { TaskTreeItem } from '../taskTreeProvider';
 import {
   disposeAllTerminals,
@@ -108,18 +108,18 @@ suite('Task terminals', () => {
     await waitFor(() => vscode.window.tabGroups.activeTabGroup.viewColumn === 1, 'the focus back on the file');
   });
 
-  test('split below: the terminals open side by side below the active editor', async () => {
+  test('split below: the terminals open one under the other, below the active editor', async () => {
     withSettings({ terminalLocation: 'editor', editorTerminalLayout: 'split', editorTerminalPosition: 'below' });
     await openFixtureFile();
     await runFromTree('long-running');
     await runFromTree('long-running-2');
 
     await waitFor(() => terminalTabs().length === 2, 'both terminals in the editor');
-    // The files on top, a row with the two terminals below
+    // One column: the files, then the two terminals
     const layout = await gridLayout();
     assert.strictEqual(layout.orientation, VERTICAL, JSON.stringify(layout));
-    assert.strictEqual(layout.groups.length, 2, JSON.stringify(layout));
-    assert.strictEqual(layout.groups[1].groups?.length, 2, JSON.stringify(layout));
+    assert.strictEqual(layout.groups.length, 3, JSON.stringify(layout));
+    assert.ok(layout.groups.every(g => g.groups === undefined), JSON.stringify(layout));
     assert.deepStrictEqual(editorLayout()[0], ['idle.js']);
   });
 
@@ -177,6 +177,17 @@ suite('Task terminals', () => {
 
     await waitFor(() => terminalTabs().length === 2, 'the second terminal in the editor');
     assert.strictEqual(editorLayout().length, 2, JSON.stringify(editorLayout()));
+  });
+
+  test('a task that does not reveal its terminal keeps it in the panel', async () => {
+    withSettings({ terminalLocation: 'editor', editorTerminalLayout: 'tab' });
+    const task = await getTask('long-running');
+    task.presentationOptions = { reveal: vscode.TaskRevealKind.Never };
+    await runTask(task);
+    await waitForRunning('long-running');
+    await waitFor(() => vscode.window.terminals.some(t => t.name.includes('long-running')), 'the task terminal');
+    await new Promise(r => setTimeout(r, 1000));
+    assert.deepStrictEqual(terminalTabs(), []);
   });
 
   test('Run in Editor overrides the panel setting', async () => {
