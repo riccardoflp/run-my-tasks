@@ -66,7 +66,10 @@ export function withSettings(values: Record<string, unknown>): void {
 type Pickable = string | vscode.QuickPickItem;
 
 // Answers each showQuickPick call in turn: `choose` receives the offered items and returns the pick
-export function answerQuickPicks(...choose: ((items: Pickable[]) => Pickable | undefined)[]): Pickable[][] {
+// (an array of picks for a canPickMany pick)
+export function answerQuickPicks(
+  ...choose: ((items: Pickable[]) => Pickable | Pickable[] | undefined)[]
+): Pickable[][] {
   const offered: Pickable[][] = [];
   stub(vscode.window, 'showQuickPick', (async (items: readonly Pickable[] | Thenable<readonly Pickable[]>) => {
     const resolved = [...await items];
@@ -81,7 +84,25 @@ export function answerQuickPicks(...choose: ((items: Pickable[]) => Pickable | u
 export const pick = (label: string) => (items: Pickable[]) =>
   items.find(i => (typeof i === 'string' ? i : i.label) === label);
 
+export const pickMany = (...labels: string[]) => (items: Pickable[]) =>
+  items.filter(i => labels.includes(typeof i === 'string' ? i : i.label));
+
 export const cancel = () => undefined;
+
+// Answers showSaveDialog with `uri` and records the options it was called with
+export function answerSaveDialog(uri: vscode.Uri | undefined): vscode.SaveDialogOptions[] {
+  const calls: vscode.SaveDialogOptions[] = [];
+  stub(vscode.window, 'showSaveDialog', (async (options?: vscode.SaveDialogOptions) => {
+    calls.push(options ?? {});
+    return uri;
+  }) as typeof vscode.window.showSaveDialog);
+  return calls;
+}
+
+// Answers showOpenDialog with `uri` as the only file picked
+export function answerOpenDialog(uri: vscode.Uri | undefined): void {
+  stub(vscode.window, 'showOpenDialog', (async () => (uri ? [uri] : undefined)) as typeof vscode.window.showOpenDialog);
+}
 
 // Answers showInputBox with `value` and records the options it was called with
 export function answerInputBox(value: string | undefined): vscode.InputBoxOptions[] {

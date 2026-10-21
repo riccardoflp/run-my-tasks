@@ -1,5 +1,8 @@
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { createGroupStorage } from './groupStorage';
+import { mergeGroup, parseGroups, serializeGroups } from './groupTransfer';
 import {
   getLaunchConfigs,
   isLaunchRunning,
@@ -41,6 +44,17 @@ interface EntryQuickPickItem extends vscode.QuickPickItem {
 function entryPickItem(kind: EntryKind, name: string, description?: string): EntryQuickPickItem {
   return { label: name, description, entry: { kind, name } };
 }
+
+// What Import Groups does with an imported group named as an existing one
+const IMPORT_CONFLICT_CHOICES: vscode.QuickPickItem[] = [
+  { label: 'Merge', description: 'Add the tasks and launch configurations it lacks' },
+  { label: 'Replace', description: 'Replace it with the imported group' },
+  { label: 'Skip', description: 'Keep it as it is' },
+];
+
+const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`;
+const fileName = (uri: vscode.Uri): string => path.posix.basename(uri.path);
+const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 // Returned from activate() so the integration tests can inspect and reset the state
 export interface ExtensionApi {
@@ -473,6 +487,104 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       const newGroups = [...groups];
       [newGroups[idx], newGroups[idx + 1]] = [newGroups[idx + 1], newGroups[idx]];
       await saveGroups(newGroups);
+    }),
+  );
+
+  // Export the picked groups to a JSON file
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.exportGroups', async () => {
+      const groups = loadGroups();
+      if (groups.length === 0) {
+        vscode.window.showInformationMessage('No groups to export.');
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        groups.map(g => ({ label: g.name, picked: true })),
+        { placeHolder: 'Select groups to export', canPickMany: true },
+      );
+      if (!picked?.length) { return; }
+
+      const folder = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(os.homedir());
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.joinPath(folder, `${vscode.workspace.name ?? 'run-my-tasks'}-groups.json`),
+        filters: { JSON: ['json'] },
+        saveLabel: 'Export',
+      });
+      if (!uri) { return; }
+
+      const names = new Set(picked.map(p => p.label));
+      const exported = groups.filter(g => names.has(g.name));
+      try {
+        await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(serializeGroups(exported)));
+      } catch (err) {
+        vscode.window.showErrorMessage(`Cannot export groups to ${fileName(uri)}: ${errorMessage(err)}`);
+        return;
+      }
+      vscode.window.showInformationMessage(`Exported ${plural(exported.length, 'group')} to ${fileName(uri)}.`);
+    }),
+  );
+
+  // Import the groups of a JSON file made by Export Groups, adding them to the existing ones
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.importGroups', async () => {
+      const [uri] = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { JSON: ['json'] },
+        openLabel: 'Import',
+      }) ?? [];
+      if (!uri) { return; }
+
+      let imported: VirtualGroup[];
+      try {
+        imported = parseGroups(new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)));
+      } catch (err) {
+        vscode.window.showErrorMessage(`Cannot import groups from ${fileName(uri)}: ${errorMessage(err)}`);
+        return;
+      }
+      if (imported.length === 0) {
+        vscode.window.showInformationMessage(`No groups in ${fileName(uri)}.`);
+        return;
+      }
+
+      // New groups go last; for a group named as an existing one, ask what to do.
+      // Cancelling the question cancels the whole import
+      let groups = loadGroups();
+      const added: VirtualGroup[] = [];
+      for (const group of imported) {
+        const existing = groups.find(g => g.name === group.name);
+        if (!existing) {
+          groups = [...groups, group];
+          added.push(group);
+          continue;
+        }
+        const choice = await vscode.window.showQuickPick(IMPORT_CONFLICT_CHOICES, {
+          placeHolder: `Group "${group.name}" already exists`,
+        });
+        if (!choice) { return; }
+        if (choice.label === 'Skip') { continue; }
+        const replacement = choice.label === 'Merge' ? mergeGroup(existing, group) : group;
+        groups = groups.map(g => (g === existing ? replacement : g));
+        added.push(group);
+      }
+      if (added.length === 0) {
+        vscode.window.showInformationMessage('No groups imported.');
+        return;
+      }
+      await saveGroups(groups);
+
+      // Groups refer to tasks and launch configurations by name: tell which ones this workspace lacks
+      const taskNames = new Set((await vscode.tasks.fetchTasks()).map(t => t.name));
+      const launchNames = new Set(getLaunchConfigs().map(c => c.name));
+      const missing = new Set([
+        ...added.flatMap(g => g.tasks.filter(name => !taskNames.has(name))),
+        ...added.flatMap(g => groupEntries(g, 'launches').filter(name => !launchNames.has(name))),
+      ]);
+      const summary = `Imported ${plural(added.length, 'group')} from ${fileName(uri)}.`;
+      if (missing.size > 0) {
+        vscode.window.showWarningMessage(`${summary} Not found in this workspace: ${[...missing].join(', ')}.`);
+      } else {
+        vscode.window.showInformationMessage(summary);
+      }
     }),
   );
 

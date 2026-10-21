@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Export Groups...** and **Import Groups...** in the `...` menu of the **Groups** view and in the command palette: export the picked groups to a JSON file and import them in another workspace. An imported group named as an existing one can be merged with it, replace it or be skipped, and the import tells which tasks and launch configurations the workspace lacks
+
 ## [0.7.0] - 2026-10-20
 
 ### Added

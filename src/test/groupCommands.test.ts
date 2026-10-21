@@ -1,16 +1,22 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../extension';
 import { LaunchTreeItem, TaskTreeItem, VirtualGroup, VirtualGroupItem } from '../taskTreeProvider';
 import {
   answerInputBox,
+  answerOpenDialog,
   answerQuickPicks,
+  answerSaveDialog,
   cancel,
   captureMessages,
   getApi,
   getLaunch,
   getTask,
   pick,
+  pickMany,
   restoreStubs,
 } from './helpers';
 
@@ -283,6 +289,171 @@ suite('Group commands', () => {
       await run('moveGroupUp', item('Dev'));
       await run('moveGroupDown', item('Test'));
       assert.deepStrictEqual(names(), ['Dev', 'Build', 'Test']);
+    });
+  });
+
+  suite('exportGroups / importGroups', () => {
+    let dir: string;
+    let file: vscode.Uri;
+    const writeFile = (content: unknown) =>
+      fs.writeFileSync(file.fsPath, typeof content === 'string' ? content : JSON.stringify(content));
+    const readFile = () => JSON.parse(fs.readFileSync(file.fsPath, 'utf8'));
+
+    setup(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-my-tasks-'));
+      file = vscode.Uri.file(path.join(dir, 'groups.json'));
+    });
+    teardown(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+    test('exportGroups writes the picked groups, offering all of them already picked', async () => {
+      await given([
+        { name: 'Dev', tasks: ['quick'], launches: ['debug-idle'] },
+        { name: 'Build', tasks: ['compound'] },
+        { name: 'Test', tasks: [] },
+      ]);
+      const offered = answerQuickPicks(pickMany('Dev', 'Test'));
+      const dialogs = answerSaveDialog(file);
+      const messages = captureMessages();
+      await run('exportGroups');
+      assert.deepStrictEqual(offered[0], [
+        { label: 'Dev', picked: true }, { label: 'Build', picked: true }, { label: 'Test', picked: true },
+      ]);
+      assert.ok(dialogs[0].defaultUri?.path.endsWith('-groups.json'));
+      assert.deepStrictEqual(readFile(), {
+        version: 1,
+        groups: [
+          { name: 'Dev', tasks: ['quick'], launches: ['debug-idle'] },
+          { name: 'Test', tasks: [], launches: [] },
+        ],
+      });
+      assert.deepStrictEqual(messages.info, ['Exported 2 groups to groups.json.']);
+    });
+
+    test('exportGroups writes nothing when the pick or the save dialog is cancelled', async () => {
+      await given([{ name: 'Dev', tasks: [] }]);
+      answerQuickPicks(pickMany());
+      await run('exportGroups');
+      restoreStubs();
+      answerQuickPicks(pickMany('Dev'));
+      answerSaveDialog(undefined);
+      await run('exportGroups');
+      assert.strictEqual(fs.existsSync(file.fsPath), false);
+    });
+
+    test('exportGroups tells the user when there are no groups', async () => {
+      const messages = captureMessages();
+      await run('exportGroups');
+      assert.deepStrictEqual(messages.info, ['No groups to export.']);
+    });
+
+    test('importGroups adds the new groups after the existing ones', async () => {
+      await given([{ name: 'Dev', tasks: ['quick'] }]);
+      writeFile({
+        version: 1,
+        groups: [{ name: 'Build', tasks: ['compound'], launches: [] }, { name: ' Debug ', tasks: [], launches: ['debug-idle'] }],
+      });
+      answerOpenDialog(file);
+      const messages = captureMessages();
+      await run('importGroups');
+      assert.deepStrictEqual(groups(), [
+        { name: 'Dev', tasks: ['quick'] },
+        { name: 'Build', tasks: ['compound'] },
+        { name: 'Debug', tasks: [], launches: ['debug-idle'] },
+      ]);
+      assert.deepStrictEqual(messages.info, ['Imported 2 groups from groups.json.']);
+    });
+
+    test('importGroups merges, replaces or skips each group named as an existing one', async () => {
+      await given([
+        { name: 'Dev', tasks: ['quick'], launches: ['debug-idle'] },
+        { name: 'Build', tasks: ['compound'] },
+        { name: 'Test', tasks: ['long-running'] },
+      ]);
+      writeFile({
+        version: 1,
+        groups: [
+          { name: 'Dev', tasks: ['long-running', 'quick'], launches: ['debug-both'] },
+          { name: 'Build', tasks: ['quick'], launches: [] },
+          { name: 'Test', tasks: [], launches: [] },
+        ],
+      });
+      answerOpenDialog(file);
+      const offered = answerQuickPicks(pick('Merge'), pick('Replace'), pick('Skip'));
+      const messages = captureMessages();
+      await run('importGroups');
+      assert.deepStrictEqual((offered[0] as vscode.QuickPickItem[]).map(i => i.label), ['Merge', 'Replace', 'Skip']);
+      assert.deepStrictEqual(groups(), [
+        { name: 'Dev', tasks: ['quick', 'long-running'], launches: ['debug-idle', 'debug-both'] },
+        { name: 'Build', tasks: ['quick'] },
+        { name: 'Test', tasks: ['long-running'] },
+      ]);
+      assert.deepStrictEqual(messages.info, ['Imported 2 groups from groups.json.']);
+    });
+
+    test('importGroups imports nothing when a conflict question is cancelled', async () => {
+      await given([{ name: 'Dev', tasks: ['quick'] }]);
+      writeFile({ version: 1, groups: [{ name: 'Build', tasks: [] }, { name: 'Dev', tasks: [] }] });
+      answerOpenDialog(file);
+      answerQuickPicks(cancel);
+      await run('importGroups');
+      assert.deepStrictEqual(groups(), [{ name: 'Dev', tasks: ['quick'] }]);
+    });
+
+    test('importGroups warns about the tasks and launch configurations missing from the workspace', async () => {
+      writeFile({ version: 1, groups: [{ name: 'Dev', tasks: ['quick', 'nope'], launches: ['debug-idle', 'gone'] }] });
+      answerOpenDialog(file);
+      const messages = captureMessages();
+      await run('importGroups');
+      assert.deepStrictEqual(names(), ['Dev']);
+      assert.deepStrictEqual(messages.warning, [
+        'Imported 1 group from groups.json. Not found in this workspace: nope, gone.',
+      ]);
+    });
+
+    test('importGroups refuses an invalid file', async () => {
+      await given([{ name: 'Dev', tasks: [] }]);
+      const cases: [unknown, string][] = [
+        ['{ not json', 'not a valid JSON file'],
+        [{ groups: [] }, 'missing version'],
+        [{ version: 1 }, 'not a file of exported groups'],
+        [{ version: 2, groups: [] }, 'exported by a newer version of Run My Tasks'],
+        [{ version: 1, groups: [{ name: ' ', tasks: [] }] }, 'group 1 has no name'],
+        [{ version: 1, groups: [{ name: 'A', tasks: 'quick' }] }, 'group "A" has invalid tasks or launch configurations'],
+        [{ version: 1, groups: [{ name: 'A', tasks: [], launches: [1] }] }, 'group "A" has invalid tasks or launch configurations'],
+        [{ version: 1, groups: [{ name: 'A', tasks: [] }, { name: 'A', tasks: [] }] }, 'group "A" appears twice'],
+      ];
+      for (const [content, reason] of cases) {
+        writeFile(content);
+        answerOpenDialog(file);
+        const messages = captureMessages();
+        await run('importGroups');
+        assert.deepStrictEqual(messages.error, [`Cannot import groups from groups.json: ${reason}`]);
+        restoreStubs();
+      }
+      assert.deepStrictEqual(groups(), [{ name: 'Dev', tasks: [] }]);
+    });
+
+    test('importGroups does nothing when the open dialog is cancelled', async () => {
+      await given([{ name: 'Dev', tasks: [] }]);
+      answerOpenDialog(undefined);
+      await run('importGroups');
+      assert.deepStrictEqual(names(), ['Dev']);
+    });
+
+    test('importing an export gives back the same groups', async () => {
+      const original: VirtualGroup[] = [
+        { name: 'Dev', tasks: ['quick', 'compound'], launches: ['debug-idle'] },
+        { name: 'Build', tasks: [] },
+      ];
+      await given(original);
+      answerQuickPicks(pickMany('Dev', 'Build'));
+      answerSaveDialog(file);
+      captureMessages();
+      await run('exportGroups');
+      await given([]);
+      answerOpenDialog(file);
+      await run('importGroups');
+      assert.deepStrictEqual(groups(), original);
     });
   });
 

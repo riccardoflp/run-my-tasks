@@ -24,6 +24,8 @@ Click a running task to focus the terminal it is running in, or a running launch
 
 **Drag and drop** — drag a task from the **Tasks** view, or a launch configuration from the **Launch Configurations** view, onto a group header in the **Groups** view to add it to that group. Drag a task within the **Groups** view onto another task to reorder, or onto a different group header to move it; the same goes for launch configurations.
 
+**Import and export groups** — **Export Groups...** in the `...` menu of the **Groups** view saves the groups you pick to a JSON file; **Import Groups...** adds the groups of such a file to the ones you have, in another workspace or on another machine. For a group named as an existing one you choose whether to merge the two (adding the tasks and launch configurations it lacks), replace it or skip it. Groups refer to tasks and launch configurations by name: the import tells you which ones the workspace lacks.
+
 The picker groups tasks by source (Workspace tasks first, then extension-contributed tasks in alphabetical order), lists the launch configurations last, and optionally shows the underlying shell command, npm script or debugger type as a detail line.
 
 ## Requirements
@@ -72,6 +74,8 @@ All settings are under the `runMyTasks` namespace and can be changed in **Settin
 | `Run My Tasks: Delete Group` | — | Delete the selected group |
 | `Run My Tasks: Run Group` | — | Run all tasks and launch configurations in the selected group |
 | `Run My Tasks: Stop Group` | — | Stop all running tasks and debug sessions in the selected group |
+| `Run My Tasks: Export Groups...` | — | Save the picked groups to a JSON file |
+| `Run My Tasks: Import Groups...` | — | Add the groups of an exported JSON file to the existing ones |
 | `Run My Tasks: Open tasks.json` | — | Open the workspace `tasks.json` file |
 | `Run My Tasks: Open launch.json` | — | Open the workspace `launch.json` file |
 

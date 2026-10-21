@@ -111,6 +111,18 @@
         "category": "Run My Tasks"
       },
       {
+        "command": "run-my-tasks.exportGroups",
+        "title": "Export Groups...",
+        "icon": "$(export)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.importGroups",
+        "title": "Import Groups...",
+        "icon": "$(cloud-download)",
+        "category": "Run My Tasks"
+      },
+      {
         "command": "run-my-tasks.addTaskToGroup",
         "title": "Add to Group",
         "category": "Run My Tasks"
@@ -323,6 +335,16 @@
           "command": "run-my-tasks.refreshTasksView",
           "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView || view == run-my-tasks.launchView",
           "group": "navigation@7"
+        },
+        {
+          "command": "run-my-tasks.exportGroups",
+          "when": "view == run-my-tasks.groupsView",
+          "group": "1_transfer@1"
+        },
+        {
+          "command": "run-my-tasks.importGroups",
+          "when": "view == run-my-tasks.groupsView",
+          "group": "1_transfer@2"
         }
       ],
       "view/item/context": [
