@@ -11,12 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Export Groups...** and **Import Groups...** in the `...` menu of the **Groups** view and in the command palette: export the picked groups to a JSON file and import them in another workspace. An imported group named as an existing one can be merged with it, replace it or be skipped, and the import tells which tasks and launch configurations the workspace lacks
 
+### Changed
+
+- With the `split` layout every terminal is split in the direction of `runMyTasks.editorTerminalPosition`: `below` now stacks the terminals one under the other, instead of putting them side by side in a row below the files
+- The panel is closed once the terminal of a task has moved to the editor area, also when it holds other terminals
+
 ## [0.7.0] - 2026-10-20
 
 ### Added
 
 - **Collapse All** and **Expand All** buttons in the title of the **Groups** and **Tasks** views
-- Task terminals can open in the editor area: the `runMyTasks.terminalLocation` setting picks the panel or the editor, and `runMyTasks.editorTerminalLayout` whether they open each in its own split after the files, all together in one group next to the files, or as full tabs of the current group; `runMyTasks.editorTerminalPosition` splits to the right or downwards
+- Task terminals can open in the editor area: the `runMyTasks.terminalLocation` setting picks the panel or the editor, and `runMyTasks.editorTerminalLayout` whether they open side by side, each in its own split next to the files, all together in one group next to the files, or as full tabs of the current group; `runMyTasks.editorTerminalPosition` puts them to the right of the files or below them
 - **Run in Editor** / **Run in Panel** in the right-click menu of a task, to run it in the place that is not the default
 
 ## [0.6.0] - 2026-10-15
