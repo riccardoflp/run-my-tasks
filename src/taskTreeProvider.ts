@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { getLaunchConfigs, isLaunchRunning, LaunchConfig, runningLaunchNames } from './launchConfigs';
+import { runningTaskKeys, taskKey } from './taskIdentity';
 
 export interface VirtualGroup {
   name: string;
@@ -15,8 +16,32 @@ export function groupEntries(group: VirtualGroup, kind: EntryKind): string[] {
   return group[kind] ?? [];
 }
 
+// The task a name of a group stands for. Groups keep only names: among the tasks with that name,
+// the one of tasks.json wins, then the first one found
+function taskNamed(tasks: readonly vscode.Task[], name: string): vscode.Task | undefined {
+  const named = tasks.filter(t => t.name === name);
+  return named.find(t => t.source === 'Workspace') ?? named[0];
+}
+
+// The tasks of the group in its order; names with no task in this workspace are skipped
+export function groupTasks(group: VirtualGroup, tasks: readonly vscode.Task[]): vscode.Task[] {
+  return group.tasks
+    .map(name => taskNamed(tasks, name))
+    .filter((t): t is vscode.Task => t !== undefined);
+}
+
+// The launch configurations of the group in its order; unknown names are skipped
+export function groupLaunches(group: VirtualGroup, configs: readonly LaunchConfig[]): LaunchConfig[] {
+  return groupEntries(group, 'launches')
+    .map(name => configs.find(c => c.name === name))
+    .filter((c): c is LaunchConfig => c !== undefined);
+}
+
 export interface SharedState {
   cachedTasks: vscode.Task[] | null;
+  // The fetch filling cachedTasks, shared by the views asking for the tasks at the same time
+  loadingTasks: Promise<vscode.Task[]> | null;
+  // Keys (taskKey) of the tasks being stopped, shown idle until they end
   readonly pendingStop: Set<string>;
   virtualGroups: VirtualGroup[];
   // Search text narrowing all the views; empty when not searching
@@ -24,7 +49,26 @@ export interface SharedState {
 }
 
 export function createSharedState(): SharedState {
-  return { cachedTasks: null, pendingStop: new Set(), virtualGroups: [], filter: '' };
+  return { cachedTasks: null, loadingTasks: null, pendingStop: new Set(), virtualGroups: [], filter: '' };
+}
+
+// The tasks of the workspace, fetched once until dropCachedTasks()
+export async function loadTasks(shared: SharedState): Promise<vscode.Task[]> {
+  if (shared.cachedTasks) { return shared.cachedTasks; }
+  const loading = shared.loadingTasks ?? (shared.loadingTasks = Promise.resolve(vscode.tasks.fetchTasks()));
+  try {
+    const tasks = await loading;
+    // Unless the cache was dropped meanwhile: the tasks may have changed after the fetch started
+    if (shared.loadingTasks === loading) { shared.cachedTasks = tasks; }
+    return tasks;
+  } finally {
+    if (shared.loadingTasks === loading) { shared.loadingTasks = null; }
+  }
+}
+
+export function dropCachedTasks(shared: SharedState): void {
+  shared.cachedTasks = null;
+  shared.loadingTasks = null;
 }
 
 // True when every search term appears in one of the texts, ignoring case
@@ -141,19 +185,11 @@ export class LaunchTreeItem extends vscode.TreeItem {
 
 export type EntryTreeItem = TaskTreeItem | LaunchTreeItem;
 
-function getRunningNames(pendingStop: Set<string>): Set<string> {
-  return new Set(
-    vscode.tasks.taskExecutions
-      .filter(e => !pendingStop.has(e.task.name))
-      .map(e => e.task.name),
-  );
-}
-
-function buildGroups(tasks: vscode.Task[], runningNames: Set<string>, expandState: ExpandState): TaskGroupItem[] {
+function buildGroups(tasks: vscode.Task[], runningKeys: Set<string>, expandState: ExpandState): TaskGroupItem[] {
   const groups = new Map<string, number>();
   for (const t of tasks) {
     const prev = groups.get(t.source) ?? 0;
-    groups.set(t.source, runningNames.has(t.name) ? prev + 1 : prev);
+    groups.set(t.source, runningKeys.has(taskKey(t)) ? prev + 1 : prev);
   }
 
   const sorted = [...groups.keys()].sort((a, b) => {
@@ -165,8 +201,8 @@ function buildGroups(tasks: vscode.Task[], runningNames: Set<string>, expandStat
   return sorted.map(source => new TaskGroupItem(source, groups.get(source) ?? 0, expandState));
 }
 
-function buildTaskItems(tasks: vscode.Task[], runningNames: Set<string>, groupName?: string): TaskTreeItem[] {
-  return tasks.map(t => new TaskTreeItem(t, runningNames.has(t.name), groupName));
+function buildTaskItems(tasks: vscode.Task[], runningKeys: Set<string>, groupName?: string): TaskTreeItem[] {
+  return tasks.map(t => new TaskTreeItem(t, runningKeys.has(taskKey(t)), groupName));
 }
 
 // Mime types for drop-cursor matching (data travels via module-level variable, not DataTransfer)
@@ -332,46 +368,39 @@ export class GroupsTreeProvider implements vscode.TreeDataProvider<GroupsNode> {
   }
 
   async getChildren(element?: GroupsNode): Promise<GroupsNode[]> {
-    if (!this.shared.cachedTasks) {
-      try {
-        this.shared.cachedTasks = await vscode.tasks.fetchTasks();
-      } catch {
-        return [];
-      }
+    let tasks: vscode.Task[];
+    try {
+      tasks = await loadTasks(this.shared);
+    } catch {
+      return [];
     }
 
     const filter = this.shared.filter;
 
     if (!element) {
+      // A group matching the search by its own name is shown even with no entry, so it can be found
       return this.shared.virtualGroups
-        .map(g => ({ group: g, entries: this.entryItems(g) }))
-        .filter(({ group, entries }) => !filter || entries.some(e => matchesFilter(filter, group.name, e.name)))
+        .map(g => ({ group: g, entries: this.entryItems(g, tasks) }))
+        .filter(({ group, entries }) =>
+          !filter || matchesFilter(filter, group.name) || entries.some(e => matchesFilter(filter, group.name, e.name)))
         .map(({ group, entries }) => new VirtualGroupItem(group, entries.filter(e => e.running).length, this.expandState));
     }
 
     if (element instanceof VirtualGroupItem) {
       const { group } = element;
-      return this.entryItems(group).filter(e => matchesFilter(filter, group.name, e.name));
+      return this.entryItems(group, tasks).filter(e => matchesFilter(filter, group.name, e.name));
     }
 
     return [];
   }
 
   // Tasks then launch configurations of the group, each in the user-defined order; unknown names are skipped
-  private entryItems(group: VirtualGroup): EntryTreeItem[] {
-    const groupTasks = group.tasks
-      .map(name => this.shared.cachedTasks!.find(t => t.name === name))
-      .filter((t): t is vscode.Task => t !== undefined);
-
-    const launchConfigs = getLaunchConfigs();
+  private entryItems(group: VirtualGroup, tasks: vscode.Task[]): EntryTreeItem[] {
     const runningLaunches = runningLaunchNames();
-    const groupLaunches = groupEntries(group, 'launches')
-      .map(name => launchConfigs.find(c => c.name === name))
-      .filter((c): c is LaunchConfig => c !== undefined);
-
     return [
-      ...buildTaskItems(groupTasks, getRunningNames(this.shared.pendingStop), group.name),
-      ...groupLaunches.map(c => new LaunchTreeItem(c, isLaunchRunning(c, runningLaunches), group.name)),
+      ...buildTaskItems(groupTasks(group, tasks), runningTaskKeys(this.shared.pendingStop), group.name),
+      ...groupLaunches(group, getLaunchConfigs())
+        .map(c => new LaunchTreeItem(c, isLaunchRunning(c, runningLaunches), group.name)),
     ];
   }
 }
@@ -400,25 +429,24 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TasksNode> {
   }
 
   async getChildren(element?: TasksNode): Promise<TasksNode[]> {
-    if (!this.shared.cachedTasks) {
-      try {
-        this.shared.cachedTasks = await vscode.tasks.fetchTasks();
-      } catch {
-        return [];
-      }
+    let allTasks: vscode.Task[];
+    try {
+      allTasks = await loadTasks(this.shared);
+    } catch {
+      return [];
     }
 
-    const runningNames = getRunningNames(this.shared.pendingStop);
-    const tasks = this.shared.cachedTasks.filter(t => matchesFilter(this.shared.filter, t.source, t.name));
+    const runningKeys = runningTaskKeys(this.shared.pendingStop);
+    const tasks = allTasks.filter(t => matchesFilter(this.shared.filter, t.source, t.name));
 
     if (!element) {
-      return buildGroups(tasks, runningNames, this.expandState);
+      return buildGroups(tasks, runningKeys, this.expandState);
     }
 
     if (element instanceof TaskGroupItem) {
       return buildTaskItems(
         tasks.filter(t => t.source === element.source),
-        runningNames,
+        runningKeys,
       );
     }
 

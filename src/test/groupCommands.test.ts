@@ -110,8 +110,17 @@ suite('Group commands', () => {
       const validate = calls[0].validateInput!;
       assert.strictEqual(validate('  '), 'Name cannot be empty');
       assert.strictEqual(validate('Build'), 'A group with this name already exists');
+      assert.strictEqual(validate(' Build '), 'A group with this name already exists');
       assert.strictEqual(validate('Dev'), undefined);
+      assert.strictEqual(validate(' Dev '), undefined);
       assert.strictEqual(validate('Test'), undefined);
+    });
+
+    test('never gives two groups the same name', async () => {
+      await given([{ name: 'Dev', tasks: [] }, { name: 'Build', tasks: [] }]);
+      answerInputBox('Build ');
+      await run('renameGroup', item('Dev'));
+      assert.deepStrictEqual(names(), ['Dev', 'Build']);
     });
 
     test('does nothing when cancelled or unchanged', async () => {
@@ -270,6 +279,16 @@ suite('Group commands', () => {
       assert.deepStrictEqual(groups(), [
         { name: 'Dev', tasks: ['quick'], launches: ['debug-both', 'debug-idle', 'debug-idle-2'] },
       ]);
+    });
+
+    test('moveTaskUp / moveTaskDown skip the tasks this workspace lacks, hidden in the view', async () => {
+      await given([{ name: 'Dev', tasks: ['quick', 'missing', 'long-running', 'gone'] }]);
+      await run('moveTaskUp', await taskItem('long-running'));
+      assert.deepStrictEqual(devTasks(), ['long-running', 'quick', 'missing', 'gone']);
+      await run('moveTaskDown', await taskItem('quick'));
+      assert.deepStrictEqual(devTasks(), ['long-running', 'quick', 'missing', 'gone']);
+      await run('moveTaskDown', await taskItem('long-running'));
+      assert.deepStrictEqual(devTasks(), ['quick', 'long-running', 'missing', 'gone']);
     });
 
     test('moving a task past either end does nothing', async () => {

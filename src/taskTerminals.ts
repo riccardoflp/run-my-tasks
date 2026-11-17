@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { runningTaskKeys, taskKey } from './taskIdentity';
 
 export type TerminalLocation = 'panel' | 'editor';
 
@@ -44,7 +45,10 @@ export async function runTask(task: vscode.Task, location = configuredLocation()
   // A task that does not reveal its terminal keeps it hidden in the panel. The others reveal it
   // there first: VS Code stops tracking a task started with reveal "never" once its terminal moves
   const reveal = task.presentationOptions.reveal ?? vscode.TaskRevealKind.Always;
-  if (location !== 'editor' || reveal !== vscode.TaskRevealKind.Always) {
+  // A task already running does not start again (VS Code asks what to do with it): its start event
+  // may never come, and the pending move would catch the next start of the task, wherever it comes from
+  const running = runningTaskKeys().has(taskKey(task));
+  if (location !== 'editor' || reveal !== vscode.TaskRevealKind.Always || running) {
     pendingMoves.delete(task.name);
     return vscode.tasks.executeTask(task);
   }

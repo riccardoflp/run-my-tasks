@@ -12,13 +12,18 @@ import {
   trackDebugSessions,
 } from './launchConfigs';
 import { createStatusBarItem } from './statusBar';
+import { runningTaskKeys, taskKey } from './taskIdentity';
 import { showTaskPicker } from './taskPicker';
 import { findTaskTerminal, runTask, TerminalLocation, trackTaskTerminals } from './taskTerminals';
 import {
   createSharedState,
+  dropCachedTasks,
   EntryKind,
   EntryTreeItem,
   groupEntries,
+  groupLaunches,
+  groupTasks,
+  loadTasks,
   SharedState,
   GroupsDragController,
   GroupsTreeProvider,
@@ -104,11 +109,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   ];
   context.subscriptions.push(...views);
 
-  const refreshAll = (): void => {
-    shared.cachedTasks = null;
+  // Redraws the views with the cached tasks: their running state changed, not the tasks themselves
+  const refreshViews = (): void => {
     groupsProvider.refresh();
     tasksProvider.refresh();
     launchProvider.refresh();
+  };
+
+  // Fetches the tasks again, then redraws the views
+  const refreshAll = (): void => {
+    dropCachedTasks(shared);
+    refreshViews();
   };
 
   const refreshLaunches = (): void => {
@@ -128,14 +139,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     launchProvider.refresh();
   };
 
-  const markStopped = (name: string): void => {
-    shared.pendingStop.add(name);
+  // Shows the task idle right away, before it ends
+  const markStopped = (task: vscode.Task): void => {
+    shared.pendingStop.add(taskKey(task));
     groupsProvider.refresh();
     tasksProvider.refresh();
-  };
-
-  const clearStopped = (name: string): void => {
-    shared.pendingStop.delete(name);
   };
 
   // Load persisted groups on startup, and again when the window gets the focus:
@@ -151,24 +159,29 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  // Refresh both views on task lifecycle events
+  // Redraw the views on task lifecycle events
   context.subscriptions.push(
     trackTaskTerminals(),
     vscode.tasks.onDidStartTask(e => {
-      shared.pendingStop.delete(e.execution.task.name);
-      refreshAll();
+      shared.pendingStop.delete(taskKey(e.execution.task));
+      refreshViews();
     }),
     vscode.tasks.onDidEndTask(e => {
-      clearStopped(e.execution.task.name);
-      refreshAll();
+      shared.pendingStop.delete(taskKey(e.execution.task));
+      refreshViews();
     }),
   );
 
-  // Refresh the launch configurations when a debug session starts or ends, or launch.json changes
+  // Refresh the launch configurations when a debug session starts or ends, or launch.json changes,
+  // and the tasks when tasks.json changes
   context.subscriptions.push(
     trackDebugSessions(refreshLaunches),
     vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('launch')) { refreshLaunches(); }
+      if (e.affectsConfiguration('tasks')) {
+        refreshAll();
+      } else if (e.affectsConfiguration('launch')) {
+        refreshLaunches();
+      }
     }),
   );
 
@@ -236,9 +249,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Stop inline button on running task
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.stopTaskFromTree', (item: TaskTreeItem) => {
-      const execution = vscode.tasks.taskExecutions.find(e => e.task.name === item.task.name);
+      const key = taskKey(item.task);
+      const execution = vscode.tasks.taskExecutions.find(e => taskKey(e.task) === key);
       if (execution) {
-        markStopped(item.task.name);
+        markStopped(execution.task);
         execution.terminate();
       }
     }),
@@ -335,17 +349,20 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       const newName = await vscode.window.showInputBox({
         prompt: 'New group name',
         value: groupName,
+        // The name is saved trimmed: check it trimmed, or " Dev" would pass next to "Dev"
         validateInput: v => {
-          if (!v.trim()) { return 'Name cannot be empty'; }
-          if (v !== groupName && groups.some(g => g.name === v)) {
+          const name = v.trim();
+          if (!name) { return 'Name cannot be empty'; }
+          if (name !== groupName && groups.some(g => g.name === name)) {
             return 'A group with this name already exists';
           }
         },
       });
-      if (!newName || newName === groupName) { return; }
+      const trimmed = newName?.trim();
+      if (!trimmed || trimmed === groupName || groups.some(g => g.name === trimmed)) { return; }
 
       await saveGroups(groups.map(g =>
-        g.name === groupName ? { ...g, name: newName.trim() } : g,
+        g.name === groupName ? { ...g, name: trimmed } : g,
       ));
     }),
   );
@@ -438,33 +455,32 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  // Move task or launch configuration up/down within its group, among the entries of its kind
-  context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.moveTaskUp', async (item: EntryTreeItem) => {
-      if (!item.groupName) { return; }
-      const groups = loadGroups();
-      const group = groups.find(g => g.name === item.groupName);
-      if (!group) { return; }
-      const entries = [...groupEntries(group, item.kind)];
-      const idx = entries.indexOf(item.name);
-      if (idx <= 0) { return; }
-      [entries[idx - 1], entries[idx]] = [entries[idx], entries[idx - 1]];
-      await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, [item.kind]: entries } : g));
-    }),
-  );
+  // Names of the tasks or launch configurations of this workspace: the groups view shows only these
+  const knownNames = async (kind: EntryKind): Promise<Set<string>> =>
+    new Set(kind === 'tasks' ? (await loadTasks(shared)).map(t => t.name) : getLaunchConfigs().map(c => c.name));
+
+  // Moves the entry past its neighbour shown in the group, among the entries of its kind.
+  // Entries this workspace lacks are hidden from the view: they are skipped, keeping their place
+  const moveEntry = async (item: EntryTreeItem, step: -1 | 1): Promise<void> => {
+    if (!item.groupName) { return; }
+    const groups = loadGroups();
+    const group = groups.find(g => g.name === item.groupName);
+    if (!group) { return; }
+    const entries = [...groupEntries(group, item.kind)];
+    const from = entries.indexOf(item.name);
+    if (from < 0) { return; }
+    const known = await knownNames(item.kind);
+    let to = from + step;
+    while (to >= 0 && to < entries.length && !known.has(entries[to])) { to += step; }
+    if (to < 0 || to >= entries.length) { return; }
+    entries.splice(from, 1);
+    entries.splice(to, 0, item.name);
+    await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, [item.kind]: entries } : g));
+  };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.moveTaskDown', async (item: EntryTreeItem) => {
-      if (!item.groupName) { return; }
-      const groups = loadGroups();
-      const group = groups.find(g => g.name === item.groupName);
-      if (!group) { return; }
-      const entries = [...groupEntries(group, item.kind)];
-      const idx = entries.indexOf(item.name);
-      if (idx < 0 || idx >= entries.length - 1) { return; }
-      [entries[idx], entries[idx + 1]] = [entries[idx + 1], entries[idx]];
-      await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, [item.kind]: entries } : g));
-    }),
+    vscode.commands.registerCommand('run-my-tasks.moveTaskUp', (item: EntryTreeItem) => moveEntry(item, -1)),
+    vscode.commands.registerCommand('run-my-tasks.moveTaskDown', (item: EntryTreeItem) => moveEntry(item, 1)),
   );
 
   // Move group up/down
@@ -610,23 +626,20 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
       if (!group) { return; }
 
-      const allTasks = await vscode.tasks.fetchTasks();
-      const runningNames = new Set(
-        vscode.tasks.taskExecutions
-          .filter(e => !shared.pendingStop.has(e.task.name))
-          .map(e => e.task.name),
-      );
-      const toRun = allTasks.filter(t =>
-        group!.tasks.includes(t.name) && !runningNames.has(t.name),
-      );
-      for (const task of toRun) {
-        await runTask(task);
+      // In the order of the group; a task that fails to start does not stop the others
+      const running = runningTaskKeys(shared.pendingStop);
+      for (const task of groupTasks(group, await vscode.tasks.fetchTasks())) {
+        if (running.has(taskKey(task))) { continue; }
+        try {
+          await runTask(task);
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to run task "${task.name}": ${errorMessage(err)}`);
+        }
       }
 
-      const launches = groupEntries(group, 'launches');
       const runningLaunches = runningLaunchNames();
-      for (const config of getLaunchConfigs()) {
-        if (launches.includes(config.name) && !isLaunchRunning(config, runningLaunches)) {
+      for (const config of groupLaunches(group, getLaunchConfigs())) {
+        if (!isLaunchRunning(config, runningLaunches)) {
           await startLaunch(config);
         }
       }
@@ -655,15 +668,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
       if (!group) { return; }
 
+      const keys = new Set(groupTasks(group, await vscode.tasks.fetchTasks()).map(taskKey));
       for (const execution of vscode.tasks.taskExecutions) {
-        if (group.tasks.includes(execution.task.name)) {
-          markStopped(execution.task.name);
+        if (keys.has(taskKey(execution.task))) {
+          markStopped(execution.task);
           execution.terminate();
         }
       }
 
-      const launches = groupEntries(group, 'launches');
-      await Promise.all(getLaunchConfigs().filter(c => launches.includes(c.name)).map(stopLaunch));
+      await Promise.all(groupLaunches(group, getLaunchConfigs()).map(config => stopLaunch(config)));
     }),
   );
 

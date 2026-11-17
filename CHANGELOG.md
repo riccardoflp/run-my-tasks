@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Run Group** starts the tasks and launch configurations in the order of the group, and a task that fails to start no longer keeps the others from starting
+- Tasks with the same name from different sources (a task of `tasks.json` and the npm script `build`, say) are no longer mixed up: the group runs, stops and shows as running only the task of `tasks.json`, and the stop button stops the task it is on
+- **Rename Group** no longer accepts the name of another group written with spaces around it, which gave two groups the same name
+- **Move Up** / **Move Down** in a group move past the next task shown, skipping the tasks of the group this workspace lacks, instead of seeming to do nothing
+- The views show the tasks added, renamed or removed in `tasks.json` as soon as it is saved
+- Searching for the name of a group shows it also when it has no tasks
+- A task already running, run again with `runMyTasks.terminalLocation` set to `editor`, no longer moves its terminal to the editor area the next time it is started from elsewhere
+- The task list is no longer fetched again every time a task starts or ends
+
 ## [0.8.0] - 2026-10-22
 
 ### Added

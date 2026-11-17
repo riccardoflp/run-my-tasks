@@ -1,19 +1,45 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import { taskKey } from '../taskIdentity';
 import {
   createSharedState,
+  groupTasks,
   GroupsTreeProvider,
+  loadTasks,
   TaskGroupItem,
   TasksTreeProvider,
   TaskTreeItem,
   VirtualGroupItem,
 } from '../taskTreeProvider';
-import { disposeAllTerminals, getTask, stopAllTasks, waitFor } from './helpers';
+import { disposeAllTerminals, getTask, restoreStubs, stopAllTasks, stub, waitFor } from './helpers';
 
 suite('Tree providers', () => {
   teardown(async () => {
+    restoreStubs();
     await stopAllTasks();
     disposeAllTerminals();
+  });
+
+  test('a name of a group stands for the task of tasks.json when a provider has one with the same name', async () => {
+    const workspaceQuick = await getTask('quick');
+    const npmQuick = new vscode.Task({ type: 'npm', script: 'quick' }, vscode.TaskScope.Workspace, 'quick', 'npm');
+    assert.notStrictEqual(taskKey(npmQuick), taskKey(workspaceQuick));
+    assert.deepStrictEqual(groupTasks({ name: 'Dev', tasks: ['quick'] }, [npmQuick, workspaceQuick]), [workspaceQuick]);
+    assert.deepStrictEqual(groupTasks({ name: 'Dev', tasks: ['quick'] }, [npmQuick]), [npmQuick]);
+  });
+
+  test('views asking for the tasks at the same time share one fetch', async () => {
+    let fetches = 0;
+    const fetchTasks = vscode.tasks.fetchTasks;
+    stub(vscode.tasks, 'fetchTasks', ((filter?: vscode.TaskFilter) => {
+      fetches++;
+      return fetchTasks(filter);
+    }) as typeof vscode.tasks.fetchTasks);
+    const shared = createSharedState();
+    const [a, b] = await Promise.all([loadTasks(shared), loadTasks(shared)]);
+    assert.strictEqual(fetches, 1);
+    assert.strictEqual(a, b);
+    assert.strictEqual(shared.cachedTasks, a);
   });
 
   test('Tasks view lists workspace tasks under the Workspace source first', async () => {
@@ -67,7 +93,7 @@ suite('Tree providers', () => {
     );
 
     const shared = createSharedState();
-    shared.pendingStop.add('long-running');
+    shared.pendingStop.add(taskKey(await getTask('long-running')));
     shared.virtualGroups = [{ name: 'Dev', tasks: ['long-running'] }];
     const provider = new GroupsTreeProvider(shared);
 

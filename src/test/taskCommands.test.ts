@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../extension';
+import { taskKey } from '../taskIdentity';
 import { TaskTreeItem, VirtualGroupItem } from '../taskTreeProvider';
 import {
   answerQuickPicks,
@@ -49,16 +50,30 @@ suite('Task commands', () => {
     await waitForRunning('long-running');
 
     await run('stopTaskFromTree', new TaskTreeItem(task, true));
-    assert.ok(api.shared.pendingStop.has('long-running'), 'task should be shown as stopped immediately');
+    assert.ok(api.shared.pendingStop.has(taskKey(task)), 'task should be shown as stopped immediately');
 
     await waitFor(() => runningNames().length === 0, 'the task to stop');
-    await waitFor(() => !api.shared.pendingStop.has('long-running'), 'pendingStop to be cleared');
+    await waitFor(() => !api.shared.pendingStop.has(taskKey(task)), 'pendingStop to be cleared');
   });
 
   test('starting a task clears a stale pending stop', async () => {
-    api.shared.pendingStop.add('long-running');
-    await vscode.tasks.executeTask(await getTask('long-running'));
-    await waitFor(() => !api.shared.pendingStop.has('long-running'), 'pendingStop to be cleared');
+    const task = await getTask('long-running');
+    api.shared.pendingStop.add(taskKey(task));
+    await vscode.tasks.executeTask(task);
+    await waitFor(() => !api.shared.pendingStop.has(taskKey(task)), 'pendingStop to be cleared');
+  });
+
+  test('starting and ending a task keeps the cached task list', async () => {
+    const cached = await vscode.tasks.fetchTasks();
+    api.shared.cachedTasks = cached;
+    const ended = new Promise<void>(resolve => {
+      const listener = vscode.tasks.onDidEndTask(e => {
+        if (e.execution.task.name === 'quick') { listener.dispose(); resolve(); }
+      });
+    });
+    await vscode.tasks.executeTask(await getTask('quick'));
+    await ended;
+    assert.strictEqual(api.shared.cachedTasks, cached);
   });
 
   suite('runGroup', () => {
@@ -80,6 +95,31 @@ suite('Task commands', () => {
       await waitForRunning('long-running-2');
       assert.deepStrictEqual(started, ['long-running-2']);
       assert.deepStrictEqual(runningNames(), ['long-running', 'long-running-2']);
+    });
+
+    test('starts the tasks in the order of the group', async () => {
+      await api.saveGroups([{ name: 'Dev', tasks: ['long-running-2', 'quick', 'long-running'] }]);
+      const started: string[] = [];
+      const executeTask = vscode.tasks.executeTask;
+      stub(vscode.tasks, 'executeTask', (task: vscode.Task) => {
+        started.push(task.name);
+        return executeTask(task);
+      });
+      await run('runGroup', new VirtualGroupItem(api.shared.virtualGroups[0], 0));
+      assert.deepStrictEqual(started, ['long-running-2', 'quick', 'long-running']);
+    });
+
+    test('a task failing to start does not stop the others', async () => {
+      await api.saveGroups([{ name: 'Dev', tasks: ['quick', 'long-running'] }]);
+      const messages = captureMessages();
+      const executeTask = vscode.tasks.executeTask;
+      stub(vscode.tasks, 'executeTask', (async (task: vscode.Task) => {
+        if (task.name === 'quick') { throw new Error('boom'); }
+        return executeTask(task);
+      }) as typeof vscode.tasks.executeTask);
+      await run('runGroup', new VirtualGroupItem(api.shared.virtualGroups[0], 0));
+      await waitForRunning('long-running');
+      assert.deepStrictEqual(messages.error, ['Failed to run task "quick": boom']);
     });
 
     test('asks which group to run when run from the palette', async () => {

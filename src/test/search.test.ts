@@ -73,6 +73,10 @@ suite('Search', () => {
     test('keeps the whole group when its name matches', async () => {
       assert.deepStrictEqual(await visible('dev'), { Dev: ['quick', 'long-running', 'debug-idle'] });
     });
+
+    test('keeps an empty group whose name matches', async () => {
+      assert.deepStrictEqual(await visible('empty'), { Empty: [] });
+    });
   });
 
   test('Launch Configurations view keeps the configurations whose name matches', () => {
