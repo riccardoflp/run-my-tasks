@@ -19,7 +19,9 @@
     "build",
     "launch",
     "debug",
-    "status bar"
+    "status bar",
+    "multi-root",
+    "monorepo"
   ],
   "activationEvents": [
     "onStartupFinished"
