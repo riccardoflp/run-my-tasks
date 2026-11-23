@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { createGroupStorage } from './groupStorage';
+import { createGroupStorage, migrateLegacyGroups } from './groupStorage';
 import { mergeGroup, parseGroups, serializeGroups } from './groupTransfer';
 import {
   getLaunchConfigs,
@@ -11,6 +11,16 @@ import {
   stopLaunch,
   trackDebugSessions,
 } from './launchConfigs';
+import {
+  computeScopes,
+  describeRef,
+  entryRefFor,
+  GroupScope,
+  scopeAccepts,
+  taskOrigin,
+  workspaceFileLabel,
+} from './projects';
+import { ScmSelection } from './scmSelection';
 import { createStatusBarItem } from './statusBar';
 import { runningTaskKeys, taskKey } from './taskIdentity';
 import { showTaskPicker } from './taskPicker';
@@ -22,14 +32,22 @@ import {
   EntryTreeItem,
   groupEntries,
   groupLaunches,
+  groupsOf,
+  GroupScopeItem,
   groupTasks,
   loadTasks,
+  pickGroup,
+  resolveLaunch,
+  resolveTask,
+  scopeById,
   SharedState,
   GroupsDragController,
   GroupsTreeProvider,
   LaunchDragController,
   LaunchTreeItem,
   LaunchTreeProvider,
+  setGroups,
+  showsProjects,
   TasksDragController,
   TasksTreeProvider,
   TaskTreeItem,
@@ -40,14 +58,13 @@ import {
 // Tells launch configurations from tasks in the pickers listing both
 const LAUNCH_LABEL = 'Launch Configuration';
 
-interface GroupEntry { kind: EntryKind; name: string; }
+// An entry to add to a group: its kind, name and folder
+interface NewEntry { kind: EntryKind; name: string; folder: vscode.WorkspaceFolder | undefined; }
+// An entry of a group: its kind and the ref the group stores
+interface GroupEntry { kind: EntryKind; ref: string; }
 
-interface EntryQuickPickItem extends vscode.QuickPickItem {
-  entry: GroupEntry;
-}
-
-function entryPickItem(kind: EntryKind, name: string, description?: string): EntryQuickPickItem {
-  return { label: name, description, entry: { kind, name } };
+interface EntryQuickPickItem<T> extends vscode.QuickPickItem {
+  entry: T;
 }
 
 // What Import Groups does with an imported group named as an existing one
@@ -64,7 +81,8 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 // Returned from activate() so the integration tests can inspect and reset the state
 export interface ExtensionApi {
   readonly shared: SharedState;
-  saveGroups(groups: VirtualGroup[]): Promise<void>;
+  // Saves the groups of the scope; the first one (the only one of a single-folder window) by default
+  saveGroups(groups: VirtualGroup[], scope?: GroupScope): Promise<void>;
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -77,16 +95,26 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
   // Side panel tree views
   const shared = createSharedState();
+  const scmSelection = new ScmSelection();
+  shared.visibility = scmSelection;
+  context.subscriptions.push(scmSelection);
+
   const groupsProvider = new GroupsTreeProvider(shared);
   const tasksProvider = new TasksTreeProvider(shared);
   const launchProvider = new LaunchTreeProvider(shared);
 
   const groupStorage = createGroupStorage(context);
-  const loadGroups = (): VirtualGroup[] => groupStorage.load();
+  void migrateLegacyGroups(context, groupStorage, shared.scopes);
 
-  const saveGroups = async (groups: VirtualGroup[]): Promise<void> => {
-    await groupStorage.save(groups);
-    shared.virtualGroups = groups;
+  // Reads the groups of every scope again: the other windows on the same repository
+  // (worktrees and multi-root workspaces including it) may have changed them
+  const syncGroups = (): void => {
+    for (const scope of shared.scopes) { setGroups(shared, groupStorage.load(scope), scope); }
+  };
+
+  const saveGroups = async (groups: VirtualGroup[], scope: GroupScope = shared.scopes[0]): Promise<void> => {
+    await groupStorage.save(scope, groups);
+    setGroups(shared, groups, scope);
     groupsProvider.refresh();
   };
 
@@ -94,7 +122,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     vscode.window.createTreeView('run-my-tasks.groupsView', {
       treeDataProvider: groupsProvider,
       showCollapseAll: false,
-      dragAndDropController: new GroupsDragController(shared, saveGroups),
+      dragAndDropController: new GroupsDragController(shared, (scopeId, groups) =>
+        saveGroups(groups, scopeById(shared, scopeId))),
     }),
     vscode.window.createTreeView('run-my-tasks.tasksView', {
       treeDataProvider: tasksProvider,
@@ -107,6 +136,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       dragAndDropController: new LaunchDragController(),
     }),
   ];
+  const [groupsView, tasksView] = views;
   context.subscriptions.push(...views);
 
   // Redraws the views with the cached tasks: their running state changed, not the tasks themselves
@@ -127,12 +157,23 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     launchProvider.refresh();
   };
 
+  // The messages on top of the views: the search, and in the Groups and Tasks views whether
+  // projects are hidden because their repository is not selected in Source Control
+  const updateViewMessages = (): void => {
+    const search = shared.filter ? `Search results for "${shared.filter}"` : undefined;
+    const hiding = showsProjects(shared)
+      && shared.scopes.some(scope => !shared.visibility.isScopeShown(scope));
+    const scm = hiding ? 'Showing the repositories selected in Source Control' : undefined;
+    for (const view of views) {
+      const followsScm = view === groupsView || view === tasksView;
+      view.message = [search, followsScm ? scm : undefined].filter(Boolean).join(' · ') || undefined;
+    }
+  };
+
   // Narrow all the views to the items matching the search text; an empty text shows everything again
   const setFilter = (filter: string): void => {
     shared.filter = filter;
-    for (const view of views) {
-      view.message = filter ? `Search results for "${filter}"` : undefined;
-    }
+    updateViewMessages();
     vscode.commands.executeCommand('setContext', 'runMyTasks.filterActive', filter !== '');
     groupsProvider.refresh();
     tasksProvider.refresh();
@@ -149,13 +190,28 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Load persisted groups on startup, and again when the window gets the focus:
   // the other windows on the same repository (worktrees included) may have changed them
   const reloadGroups = (): void => {
-    shared.virtualGroups = loadGroups();
+    syncGroups();
     groupsProvider.refresh();
   };
   reloadGroups();
+  updateViewMessages();
   context.subscriptions.push(
     vscode.window.onDidChangeWindowState(state => {
       if (state.focused) { reloadGroups(); }
+    }),
+    // Folders added or removed: the projects change
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      shared.scopes = computeScopes();
+      shared.groups.clear();
+      syncGroups();
+      updateViewMessages();
+      refreshAll();
+    }),
+    // A repository selected or unselected in Source Control
+    scmSelection.onDidChange(() => {
+      updateViewMessages();
+      groupsProvider.refresh();
+      tasksProvider.refresh();
     }),
   );
 
@@ -212,13 +268,23 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     vscode.commands.registerCommand('run-my-tasks.expandAllTasks', () => tasksProvider.setAllExpanded(true)),
   );
 
+  // In a multi-root workspace, asks which folder's file to open
   const openVscodeFile = async (fileName: string): Promise<void> => {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders?.length) {
       vscode.window.showErrorMessage('No workspace folder open.');
       return;
     }
-    const uri = vscode.Uri.joinPath(folders[0].uri, '.vscode', fileName);
+    let folder = folders[0];
+    if (folders.length > 1) {
+      const picked = await vscode.window.showQuickPick(
+        folders.map(f => ({ label: f.name, description: f.uri.scheme === 'file' ? f.uri.fsPath : undefined, folder: f })),
+        { placeHolder: `Open ${fileName} of` },
+      );
+      if (!picked) { return; }
+      folder = picked.folder;
+    }
+    const uri = vscode.Uri.joinPath(folder.uri, '.vscode', fileName);
     try {
       const doc = await vscode.workspace.openTextDocument(uri);
       await vscode.window.showTextDocument(doc);
@@ -284,67 +350,78 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ),
   );
 
-  // Create virtual group
+  // The scope to work in: the only one of a single-folder window, else the one the user picks
+  const pickScope = async (placeHolder: string, scopes = shared.scopes): Promise<GroupScope | undefined> => {
+    if (shared.scopes.length === 1) { return shared.scopes[0]; }
+    const picked = await vscode.window.showQuickPick(
+      scopes.map(scope => ({
+        label: scope.label,
+        description: scope.mixed ? 'groups mixing the projects' : undefined,
+        scope,
+      })),
+      { placeHolder },
+    );
+    return picked?.scope;
+  };
+
+  const allGroups = (): VirtualGroup[] => shared.scopes.flatMap(scope => groupsOf(shared, scope));
+
+  // The group of the clicked item, or the one picked from the palette
+  const targetGroup = async (
+    item: VirtualGroupItem | undefined,
+    placeHolder: string,
+    noneMessage: string,
+  ): Promise<{ scope: GroupScope; group: VirtualGroup } | undefined> => {
+    syncGroups();
+    if (item) {
+      const scope = scopeById(shared, item.scopeId);
+      return { scope, group: groupsOf(shared, scope).find(g => g.name === item.group.name) ?? item.group };
+    }
+    if (allGroups().length === 0) {
+      vscode.window.showInformationMessage(noneMessage);
+      return undefined;
+    }
+    return pickGroup(shared, placeHolder);
+  };
+
+  // Create virtual group, in the project clicked (inline button) or picked
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.createGroup', async () => {
+    vscode.commands.registerCommand('run-my-tasks.createGroup', async (item?: unknown) => {
+      syncGroups();
+      const scope = item instanceof GroupScopeItem ? item.scope : await pickScope('Create the group in');
+      if (!scope) { return; }
       const name = await vscode.window.showInputBox({
-        prompt: 'Group name',
+        prompt: showsProjects(shared) ? `Group name in ${scope.label}` : 'Group name',
         placeHolder: 'e.g. Dev, Build, Test',
       });
       if (!name?.trim()) { return; }
-      const groups = loadGroups();
+      const groups = groupStorage.load(scope);
       if (groups.some(g => g.name === name.trim())) {
         vscode.window.showWarningMessage(`Group "${name.trim()}" already exists.`);
         return;
       }
-      await saveGroups([...groups, { name: name.trim(), tasks: [] }]);
+      await saveGroups([...groups, { name: name.trim(), tasks: [] }], scope);
     }),
   );
 
   // Delete virtual group
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.deleteGroup', async (item?: VirtualGroupItem) => {
-      const groups = loadGroups();
-      let groupName: string | undefined;
-
-      if (item) {
-        groupName = item.group.name;
-      } else {
-        if (groups.length === 0) {
-          vscode.window.showInformationMessage('No groups to delete.');
-          return;
-        }
-        groupName = await vscode.window.showQuickPick(
-          groups.map(g => g.name),
-          { placeHolder: 'Select group to delete' },
-        );
-      }
-
-      if (!groupName) { return; }
-      await saveGroups(groups.filter(g => g.name !== groupName));
+      const target = await targetGroup(item, 'Select group to delete', 'No groups to delete.');
+      if (!target) { return; }
+      const { scope, group } = target;
+      await saveGroups(groupStorage.load(scope).filter(g => g.name !== group.name), scope);
     }),
   );
 
   // Rename virtual group
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.renameGroup', async (item?: VirtualGroupItem) => {
-      const groups = loadGroups();
-      let groupName: string | undefined;
-
-      if (item) {
-        groupName = item.group.name;
-      } else {
-        if (groups.length === 0) {
-          vscode.window.showInformationMessage('No groups to rename.');
-          return;
-        }
-        groupName = await vscode.window.showQuickPick(
-          groups.map(g => g.name),
-          { placeHolder: 'Select group to rename' },
-        );
-      }
-
-      if (!groupName) { return; }
+      const target = await targetGroup(item, 'Select group to rename', 'No groups to rename.');
+      if (!target) { return; }
+      const { scope } = target;
+      const groupName = target.group.name;
+      const groups = groupStorage.load(scope);
 
       const newName = await vscode.window.showInputBox({
         prompt: 'New group name',
@@ -363,15 +440,16 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
       await saveGroups(groups.map(g =>
         g.name === groupName ? { ...g, name: trimmed } : g,
-      ));
+      ), scope);
     }),
   );
 
-  // Add task or launch configuration to group (palette or context menu on the item)
+  // Add task or launch configuration to group (palette or context menu on the item). A group
+  // of a project takes only the entries of that project; one of the workspace scope takes all
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.addTaskToGroup', async (item?: EntryTreeItem) => {
-      const groups = loadGroups();
-      if (groups.length === 0) {
+      syncGroups();
+      if (allGroups().length === 0) {
         const action = await vscode.window.showInformationMessage(
           'No groups yet. Create one first.',
           'Create Group',
@@ -382,100 +460,126 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return;
       }
 
-      let entry: GroupEntry | undefined;
+      const multiRoot = showsProjects(shared);
+      let entry: NewEntry | undefined;
       if (item) {
-        entry = item;
+        entry = { kind: item.kind, name: item.name, folder: item.folder };
       } else {
         const allTasks = await vscode.tasks.fetchTasks();
-        const pick = await vscode.window.showQuickPick(
+        const pick = await vscode.window.showQuickPick<EntryQuickPickItem<NewEntry>>(
           [
-            ...allTasks.map(t => entryPickItem('tasks', t.name, t.source)),
-            ...getLaunchConfigs().map(c => entryPickItem('launches', c.name, LAUNCH_LABEL)),
+            ...allTasks.map(t => ({
+              label: t.name,
+              description: multiRoot ? `${taskOrigin(t).label} · ${t.source}` : t.source,
+              entry: { kind: 'tasks' as const, name: t.name, folder: taskOrigin(t).folder },
+            })),
+            ...getLaunchConfigs().map(c => ({
+              label: c.name,
+              description: multiRoot ? `${LAUNCH_LABEL} · ${c.folder?.name ?? workspaceFileLabel()}` : LAUNCH_LABEL,
+              entry: { kind: 'launches' as const, name: c.name, folder: c.folder },
+            })),
           ],
           { placeHolder: 'Select task or launch configuration to add' },
         );
         entry = pick?.entry;
       }
       if (!entry) { return; }
+      const { kind, name, folder } = entry;
 
-      const groupPick = await vscode.window.showQuickPick(
-        groups.map(g => g.name),
-        { placeHolder: `Add "${entry.name}" to group` },
-      );
-      if (!groupPick) { return; }
+      if (!shared.scopes.some(scope => scopeAccepts(scope, folder) && groupsOf(shared, scope).length > 0)) {
+        vscode.window.showInformationMessage(
+          `No groups can take "${name}" yet: create one in ${folder?.name ?? 'its project'} or in the Workspace.`,
+        );
+        return;
+      }
+      const picked = await pickGroup(shared, `Add "${name}" to group`, scope => scopeAccepts(scope, folder));
+      if (!picked) { return; }
 
-      const { kind, name } = entry;
-      await saveGroups(groups.map(g =>
-        g.name === groupPick && !groupEntries(g, kind).includes(name)
-          ? { ...g, [kind]: [...groupEntries(g, kind), name] }
+      const { scope } = picked;
+      const ref = entryRefFor(scope, name, folder);
+      await saveGroups(groupStorage.load(scope).map(g =>
+        g.name === picked.group.name && !groupEntries(g, kind).includes(ref)
+          ? { ...g, [kind]: [...groupEntries(g, kind), ref] }
           : g,
-      ));
+      ), scope);
     }),
   );
 
   // Remove task or launch configuration from group (palette or context menu on the item inside group)
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.removeTaskFromGroup', async (item?: EntryTreeItem) => {
-      const groups = loadGroups();
-      const remove = (groupName: string, { kind, name }: GroupEntry): Promise<void> =>
-        saveGroups(groups.map(g =>
+      syncGroups();
+      const remove = (scope: GroupScope, groupName: string, { kind, ref }: GroupEntry): Promise<void> =>
+        saveGroups(groupStorage.load(scope).map(g =>
           g.name === groupName
-            ? { ...g, [kind]: groupEntries(g, kind).filter(e => e !== name) }
+            ? { ...g, [kind]: groupEntries(g, kind).filter(e => e !== ref) }
             : g,
-        ));
+        ), scope);
 
       if (item?.groupName) {
-        await remove(item.groupName, item);
+        await remove(scopeById(shared, item.scopeId), item.groupName, item);
         return;
       }
 
-      const groupsWithTasks = groups.filter(g => g.tasks.length + groupEntries(g, 'launches').length > 0);
-      if (groupsWithTasks.length === 0) {
+      const hasEntries = (g: VirtualGroup): boolean => g.tasks.length + groupEntries(g, 'launches').length > 0;
+      if (!allGroups().some(hasEntries)) {
         vscode.window.showInformationMessage('No tasks in any group.');
         return;
       }
 
-      const groupPick = await vscode.window.showQuickPick(
-        groupsWithTasks.map(g => g.name),
-        { placeHolder: 'Select group' },
-      );
-      if (!groupPick) { return; }
+      const picked = await pickGroup(shared, 'Select group', (_, g) => hasEntries(g));
+      if (!picked) { return; }
 
-      const group = groups.find(g => g.name === groupPick)!;
-      const entryPick = await vscode.window.showQuickPick(
+      const { group } = picked;
+      const entryPick = await vscode.window.showQuickPick<EntryQuickPickItem<GroupEntry>>(
         [
-          ...group.tasks.map(name => entryPickItem('tasks', name)),
-          ...groupEntries(group, 'launches').map(name => entryPickItem('launches', name, LAUNCH_LABEL)),
+          ...group.tasks.map(ref => ({ ...describeRef(ref), entry: { kind: 'tasks' as const, ref } })),
+          ...groupEntries(group, 'launches').map(ref => {
+            const { label, description } = describeRef(ref);
+            return {
+              label,
+              description: [LAUNCH_LABEL, description].filter(Boolean).join(' · '),
+              entry: { kind: 'launches' as const, ref },
+            };
+          }),
         ],
         { placeHolder: 'Select task or launch configuration to remove' },
       );
       if (!entryPick) { return; }
 
-      await remove(groupPick, entryPick.entry);
+      await remove(picked.scope, group.name, entryPick.entry);
     }),
   );
 
-  // Names of the tasks or launch configurations of this workspace: the groups view shows only these
-  const knownNames = async (kind: EntryKind): Promise<Set<string>> =>
-    new Set(kind === 'tasks' ? (await loadTasks(shared)).map(t => t.name) : getLaunchConfigs().map(c => c.name));
+  // Whether the ref of a group of the scope stands for a task or launch configuration of this
+  // workspace: the groups view shows only those
+  const knownRef = async (scope: GroupScope, kind: EntryKind): Promise<(ref: string) => boolean> => {
+    if (kind === 'tasks') {
+      const tasks = await loadTasks(shared);
+      return ref => resolveTask(tasks, ref, scope) !== undefined;
+    }
+    const configs = getLaunchConfigs();
+    return ref => resolveLaunch(configs, ref, scope) !== undefined;
+  };
 
   // Moves the entry past its neighbour shown in the group, among the entries of its kind.
   // Entries this workspace lacks are hidden from the view: they are skipped, keeping their place
   const moveEntry = async (item: EntryTreeItem, step: -1 | 1): Promise<void> => {
     if (!item.groupName) { return; }
-    const groups = loadGroups();
+    const scope = scopeById(shared, item.scopeId);
+    const groups = groupStorage.load(scope);
     const group = groups.find(g => g.name === item.groupName);
     if (!group) { return; }
     const entries = [...groupEntries(group, item.kind)];
-    const from = entries.indexOf(item.name);
+    const from = entries.indexOf(item.ref);
     if (from < 0) { return; }
-    const known = await knownNames(item.kind);
+    const known = await knownRef(scope, item.kind);
     let to = from + step;
-    while (to >= 0 && to < entries.length && !known.has(entries[to])) { to += step; }
+    while (to >= 0 && to < entries.length && !known(entries[to])) { to += step; }
     if (to < 0 || to >= entries.length) { return; }
     entries.splice(from, 1);
-    entries.splice(to, 0, item.name);
-    await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, [item.kind]: entries } : g));
+    entries.splice(to, 0, item.ref);
+    await saveGroups(groups.map(g => g.name === item.groupName ? { ...g, [item.kind]: entries } : g), scope);
   };
 
   context.subscriptions.push(
@@ -483,46 +587,46 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     vscode.commands.registerCommand('run-my-tasks.moveTaskDown', (item: EntryTreeItem) => moveEntry(item, 1)),
   );
 
-  // Move group up/down
-  context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.moveGroupUp', async (item: VirtualGroupItem) => {
-      const groups = loadGroups();
-      const idx = groups.findIndex(g => g.name === item.group.name);
-      if (idx <= 0) { return; }
-      const newGroups = [...groups];
-      [newGroups[idx - 1], newGroups[idx]] = [newGroups[idx], newGroups[idx - 1]];
-      await saveGroups(newGroups);
-    }),
-  );
+  // Move group up/down, among the groups of its project
+  const moveGroup = async (item: VirtualGroupItem, step: -1 | 1): Promise<void> => {
+    const scope = scopeById(shared, item.scopeId);
+    const groups = [...groupStorage.load(scope)];
+    const idx = groups.findIndex(g => g.name === item.group.name);
+    const to = idx + step;
+    if (idx < 0 || to < 0 || to >= groups.length) { return; }
+    [groups[idx], groups[to]] = [groups[to], groups[idx]];
+    await saveGroups(groups, scope);
+  };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('run-my-tasks.moveGroupDown', async (item: VirtualGroupItem) => {
-      const groups = loadGroups();
-      const idx = groups.findIndex(g => g.name === item.group.name);
-      if (idx < 0 || idx >= groups.length - 1) { return; }
-      const newGroups = [...groups];
-      [newGroups[idx], newGroups[idx + 1]] = [newGroups[idx + 1], newGroups[idx]];
-      await saveGroups(newGroups);
-    }),
+    vscode.commands.registerCommand('run-my-tasks.moveGroupUp', (item: VirtualGroupItem) => moveGroup(item, -1)),
+    vscode.commands.registerCommand('run-my-tasks.moveGroupDown', (item: VirtualGroupItem) => moveGroup(item, 1)),
   );
 
-  // Export the picked groups to a JSON file
+  // Export the picked groups of a project to a JSON file
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.exportGroups', async () => {
-      const groups = loadGroups();
-      if (groups.length === 0) {
+      syncGroups();
+      const withGroups = shared.scopes.filter(scope => groupsOf(shared, scope).length > 0);
+      if (withGroups.length === 0) {
         vscode.window.showInformationMessage('No groups to export.');
         return;
       }
+      // Group names are unique in a project only: export one project at a time
+      const scope = withGroups.length === 1 ? withGroups[0] : await pickScope('Export the groups of', withGroups);
+      if (!scope) { return; }
+      const groups = groupsOf(shared, scope);
+
       const picked = await vscode.window.showQuickPick(
         groups.map(g => ({ label: g.name, picked: true })),
         { placeHolder: 'Select groups to export', canPickMany: true },
       );
       if (!picked?.length) { return; }
 
-      const folder = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(os.homedir());
+      const folder = scope.folders[0]?.uri ?? vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(os.homedir());
+      const baseName = showsProjects(shared) && !scope.mixed ? scope.folders[0].name : vscode.workspace.name ?? 'run-my-tasks';
       const uri = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.joinPath(folder, `${vscode.workspace.name ?? 'run-my-tasks'}-groups.json`),
+        defaultUri: vscode.Uri.joinPath(folder, `${baseName}-groups.json`),
         filters: { JSON: ['json'] },
         saveLabel: 'Export',
       });
@@ -540,7 +644,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  // Import the groups of a JSON file made by Export Groups, adding them to the existing ones
+  // Import the groups of a JSON file made by Export Groups, adding them to the existing ones of a project
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.importGroups', async () => {
       const [uri] = await vscode.window.showOpenDialog({
@@ -562,9 +666,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return;
       }
 
+      const scope = await pickScope('Import the groups into');
+      if (!scope) { return; }
+
       // New groups go last; for a group named as an existing one, ask what to do.
       // Cancelling the question cancels the whole import
-      let groups = loadGroups();
+      let groups = groupStorage.load(scope);
       const added: VirtualGroup[] = [];
       for (const group of imported) {
         const existing = groups.find(g => g.name === group.name);
@@ -586,15 +693,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         vscode.window.showInformationMessage('No groups imported.');
         return;
       }
-      await saveGroups(groups);
+      await saveGroups(groups, scope);
 
       // Groups refer to tasks and launch configurations by name: tell which ones this workspace lacks
-      const taskNames = new Set((await vscode.tasks.fetchTasks()).map(t => t.name));
-      const launchNames = new Set(getLaunchConfigs().map(c => c.name));
+      const tasks = await vscode.tasks.fetchTasks();
+      const configs = getLaunchConfigs();
       const missing = new Set([
-        ...added.flatMap(g => g.tasks.filter(name => !taskNames.has(name))),
-        ...added.flatMap(g => groupEntries(g, 'launches').filter(name => !launchNames.has(name))),
-      ]);
+        ...added.flatMap(g => g.tasks.filter(ref => !resolveTask(tasks, ref, scope))),
+        ...added.flatMap(g => groupEntries(g, 'launches').filter(ref => !resolveLaunch(configs, ref, scope))),
+      ].map(ref => describeRef(ref).label));
       const summary = `Imported ${plural(added.length, 'group')} from ${fileName(uri)}.`;
       if (missing.size > 0) {
         vscode.window.showWarningMessage(`${summary} Not found in this workspace: ${[...missing].join(', ')}.`);
@@ -607,28 +714,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Run all idle tasks and launch configurations in group
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.runGroup', async (item?: VirtualGroupItem) => {
-      let group: VirtualGroup | undefined;
-
-      if (item) {
-        group = item.group;
-      } else {
-        const groups = loadGroups();
-        if (groups.length === 0) {
-          vscode.window.showInformationMessage('No groups defined.');
-          return;
-        }
-        const pick = await vscode.window.showQuickPick(
-          groups.map(g => g.name),
-          { placeHolder: 'Select group to run' },
-        );
-        group = groups.find(g => g.name === pick);
-      }
-
-      if (!group) { return; }
+      const target = await targetGroup(item, 'Select group to run', 'No groups defined.');
+      if (!target) { return; }
+      const { scope, group } = target;
 
       // In the order of the group; a task that fails to start does not stop the others
       const running = runningTaskKeys(shared.pendingStop);
-      for (const task of groupTasks(group, await vscode.tasks.fetchTasks())) {
+      for (const task of groupTasks(group, await vscode.tasks.fetchTasks(), scope)) {
         if (running.has(taskKey(task))) { continue; }
         try {
           await runTask(task);
@@ -638,7 +730,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
 
       const runningLaunches = runningLaunchNames();
-      for (const config of groupLaunches(group, getLaunchConfigs())) {
+      for (const config of groupLaunches(group, getLaunchConfigs(), scope)) {
         if (!isLaunchRunning(config, runningLaunches)) {
           await startLaunch(config);
         }
@@ -649,26 +741,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Stop all running tasks and launch configurations in group
   context.subscriptions.push(
     vscode.commands.registerCommand('run-my-tasks.stopGroup', async (item?: VirtualGroupItem) => {
-      let group: VirtualGroup | undefined;
+      const target = await targetGroup(item, 'Select group to stop', 'No groups defined.');
+      if (!target) { return; }
+      const { scope, group } = target;
 
-      if (item) {
-        group = item.group;
-      } else {
-        const groups = loadGroups();
-        if (groups.length === 0) {
-          vscode.window.showInformationMessage('No groups defined.');
-          return;
-        }
-        const pick = await vscode.window.showQuickPick(
-          groups.map(g => g.name),
-          { placeHolder: 'Select group to stop' },
-        );
-        group = groups.find(g => g.name === pick);
-      }
-
-      if (!group) { return; }
-
-      const keys = new Set(groupTasks(group, await vscode.tasks.fetchTasks()).map(taskKey));
+      const keys = new Set(groupTasks(group, await vscode.tasks.fetchTasks(), scope).map(taskKey));
       for (const execution of vscode.tasks.taskExecutions) {
         if (keys.has(taskKey(execution.task))) {
           markStopped(execution.task);
@@ -676,7 +753,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         }
       }
 
-      await Promise.all(groupLaunches(group, getLaunchConfigs()).map(config => stopLaunch(config)));
+      await Promise.all(groupLaunches(group, getLaunchConfigs(), scope).map(config => stopLaunch(config)));
     }),
   );
 

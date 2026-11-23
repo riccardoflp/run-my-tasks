@@ -404,6 +404,11 @@
           "group": "0_run"
         },
         {
+          "command": "run-my-tasks.createGroup",
+          "when": "view == run-my-tasks.groupsView && viewItem == groupScope",
+          "group": "inline@1"
+        },
+        {
           "command": "run-my-tasks.runGroup",
           "when": "view == run-my-tasks.groupsView && viewItem == virtualGroup",
           "group": "inline@1"
@@ -476,6 +481,11 @@
           "type": "number",
           "default": 100,
           "description": "Priority of the status bar item. Higher numbers appear further left (for Left alignment)."
+        },
+        "runMyTasks.followScmSelection": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "In a multi-root workspace, show in the **Groups** and **Tasks** views only the projects whose git repository is selected in the **Repositories** view of Source Control. Projects outside a git repository and the groups of the **Workspace** are always shown, and so is everything when no repository is selected."
         },
         "runMyTasks.showTaskType": {
           "type": "boolean",

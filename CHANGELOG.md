@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Multi-root workspaces: the **Groups** view shows one node per project (the folders of one git repository make one project) with the groups of that project, the same ones the windows opened on the repository show; the **+** button on a project creates a group in it
+- Groups mixing the projects of a multi-root workspace, under **Workspace**: their tasks and launch configurations remember the folder they come from, shown next to their name
+- The **Groups** and **Tasks** views of a multi-root workspace show only the projects whose repository is selected in the **Repositories** view of Source Control; the `runMyTasks.followScmSelection` setting turns it off
+- The **Tasks** view of a multi-root workspace lists the tasks by folder, then by source, with the tasks of the `.code-workspace` file (named after the file) and the user tasks last; the picker tells the folder in its separators, and the search matches the folder names
+
+### Changed
+
+- The groups a multi-root workspace had so far are its **Workspace** groups
+- **Open tasks.json** / **Open launch.json** ask which folder's file to open in a multi-root workspace
+- **Export Groups...** exports the groups of one project at a time in a multi-root workspace, and **Import Groups...** asks which project to import them into
+
+### Fixed
+
+- In a multi-root workspace a group no longer runs, stops or shows the task of another folder that has the same name
+
 ## [0.8.1] - 2026-11-18
 
 ### Fixed

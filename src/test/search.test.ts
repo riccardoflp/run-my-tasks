@@ -5,6 +5,7 @@ import {
   createSharedState,
   GroupsTreeProvider,
   LaunchTreeProvider,
+  setGroups,
   TasksTreeProvider,
 } from '../taskTreeProvider';
 import { fakeInputBox, getApi, restoreStubs } from './helpers';
@@ -47,11 +48,11 @@ suite('Search', () => {
     async function visible(filter: string): Promise<Record<string, string[]>> {
       const shared = createSharedState();
       shared.filter = filter;
-      shared.virtualGroups = [
+      setGroups(shared, [
         { name: 'Dev', tasks: ['quick', 'long-running'], launches: ['debug-idle'] },
         { name: 'Build', tasks: ['compound'] },
         { name: 'Empty', tasks: [] },
-      ];
+      ]);
       const provider = new GroupsTreeProvider(shared);
       const result: Record<string, string[]> = {};
       for (const root of await provider.getChildren()) {

@@ -5,9 +5,11 @@ import { ExtensionApi } from '../extension';
 import { getLaunchConfigs, runningLaunchNames } from '../launchConfigs';
 import {
   createSharedState,
+  groupsOf,
   GroupsTreeProvider,
   LaunchTreeItem,
   LaunchTreeProvider,
+  setGroups,
   TaskTreeItem,
   VirtualGroupItem,
 } from '../taskTreeProvider';
@@ -158,7 +160,7 @@ suite('Launch configurations', () => {
   suite('in groups', () => {
     test('are listed after the tasks, in the user-defined order, skipping unknown ones', async () => {
       const shared = createSharedState();
-      shared.virtualGroups = [{ name: 'Dev', tasks: ['quick'], launches: ['debug-both', 'missing', 'debug-idle'] }];
+      setGroups(shared, [{ name: 'Dev', tasks: ['quick'], launches: ['debug-both', 'missing', 'debug-idle'] }]);
       const provider = new GroupsTreeProvider(shared);
 
       const [root] = await provider.getChildren();
@@ -175,7 +177,7 @@ suite('Launch configurations', () => {
       await waitForDebugging('debug-idle');
 
       const shared = createSharedState();
-      shared.virtualGroups = [{ name: 'Dev', tasks: ['quick'], launches: ['debug-idle', 'debug-idle-2'] }];
+      setGroups(shared, [{ name: 'Dev', tasks: ['quick'], launches: ['debug-idle', 'debug-idle-2'] }]);
       const provider = new GroupsTreeProvider(shared);
 
       const [root] = await provider.getChildren();
@@ -198,7 +200,7 @@ suite('Launch configurations', () => {
         return startDebugging(...args);
       }) as typeof vscode.debug.startDebugging);
 
-      await run('runGroup', new VirtualGroupItem(api.shared.virtualGroups[0], 1));
+      await run('runGroup', new VirtualGroupItem(groupsOf(api.shared)[0], 1));
       await waitForRunning('long-running');
       await waitForDebugging('debug-idle-2');
       assert.deepStrictEqual(started, ['debug-idle-2']);
@@ -206,7 +208,7 @@ suite('Launch configurations', () => {
 
     test('stopGroup stops the tasks and the configurations of the group only', async () => {
       await api.saveGroups([{ name: 'Dev', tasks: ['long-running'], launches: ['debug-idle'] }]);
-      await run('runGroup', new VirtualGroupItem(api.shared.virtualGroups[0], 0));
+      await run('runGroup', new VirtualGroupItem(groupsOf(api.shared)[0], 0));
       await vscode.debug.startDebugging(getLaunch('debug-idle-2').folder, 'debug-idle-2');
       await waitForRunning('long-running');
       await waitFor(() => debugging().length === 2, 'both sessions to start');

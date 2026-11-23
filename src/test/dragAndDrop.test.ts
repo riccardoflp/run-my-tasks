@@ -5,6 +5,7 @@ import {
   GroupsDragController,
   LaunchDragController,
   LaunchTreeItem,
+  setGroups,
   TasksDragController,
   TaskTreeItem,
   VirtualGroup,
@@ -25,9 +26,9 @@ suite('Groups drag and drop', () => {
 
   function setup(groups: VirtualGroup[]) {
     const shared = createSharedState();
-    shared.virtualGroups = groups;
+    setGroups(shared, groups);
     let saved: VirtualGroup[] | undefined;
-    const controller = new GroupsDragController(shared, async g => { saved = g; });
+    const controller = new GroupsDragController(shared, async (_, g) => { saved = g; });
     return { controller, saved: () => saved };
   }
 

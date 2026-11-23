@@ -3,9 +3,10 @@ import * as vscode from 'vscode';
 import { taskKey } from '../taskIdentity';
 import {
   createSharedState,
-  groupTasks,
   GroupsTreeProvider,
+  groupTasks,
   loadTasks,
+  setGroups,
   TaskGroupItem,
   TasksTreeProvider,
   TaskTreeItem,
@@ -55,7 +56,7 @@ suite('Tree providers', () => {
 
   test('Groups view keeps the user-defined task order and skips unknown tasks', async () => {
     const shared = createSharedState();
-    shared.virtualGroups = [{ name: 'Dev', tasks: ['quick', 'missing', 'long-running'] }];
+    setGroups(shared, [{ name: 'Dev', tasks: ['quick', 'missing', 'long-running'] }]);
     const provider = new GroupsTreeProvider(shared);
 
     const [root] = await provider.getChildren();
@@ -74,7 +75,7 @@ suite('Tree providers', () => {
     );
 
     const shared = createSharedState();
-    shared.virtualGroups = [{ name: 'Dev', tasks: ['quick', 'long-running'] }];
+    setGroups(shared, [{ name: 'Dev', tasks: ['quick', 'long-running'] }]);
     const provider = new GroupsTreeProvider(shared);
 
     const [root] = await provider.getChildren();
@@ -94,7 +95,7 @@ suite('Tree providers', () => {
 
     const shared = createSharedState();
     shared.pendingStop.add(taskKey(await getTask('long-running')));
-    shared.virtualGroups = [{ name: 'Dev', tasks: ['long-running'] }];
+    setGroups(shared, [{ name: 'Dev', tasks: ['long-running'] }]);
     const provider = new GroupsTreeProvider(shared);
 
     const [root] = await provider.getChildren();
@@ -104,7 +105,7 @@ suite('Tree providers', () => {
   });
   test('Collapse All / Expand All give the groups a new id with the forced state, kept on refresh', async () => {
     const shared = createSharedState();
-    shared.virtualGroups = [{ name: 'Dev', tasks: ['quick'] }, { name: 'Ops', tasks: ['long-running'] }];
+    setGroups(shared, [{ name: 'Dev', tasks: ['quick'] }, { name: 'Ops', tasks: ['long-running'] }]);
     const provider = new GroupsTreeProvider(shared);
 
     const initial = await provider.getChildren();

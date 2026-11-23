@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../extension';
-import { LaunchTreeItem, TaskTreeItem, VirtualGroup, VirtualGroupItem } from '../taskTreeProvider';
+import { groupsOf, LaunchTreeItem, TaskTreeItem, VirtualGroup, VirtualGroupItem } from '../taskTreeProvider';
 import {
   answerInputBox,
   answerOpenDialog,
@@ -25,7 +25,7 @@ const run = (command: string, ...args: unknown[]) =>
 
 suite('Group commands', () => {
   let api: ExtensionApi;
-  const groups = () => api.shared.virtualGroups;
+  const groups = () => groupsOf(api.shared);
   const names = () => groups().map(g => g.name);
   const item = (name: string) => new VirtualGroupItem(groups().find(g => g.name === name)!, 0);
 

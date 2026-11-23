@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../extension';
 import { taskKey } from '../taskIdentity';
-import { TaskTreeItem, VirtualGroupItem } from '../taskTreeProvider';
+import { groupsOf, TaskTreeItem, VirtualGroupItem } from '../taskTreeProvider';
 import {
   answerQuickPicks,
   captureMessages,
@@ -91,7 +91,7 @@ suite('Task commands', () => {
         started.push(task.name);
         return executeTask(task);
       });
-      await run('runGroup', new VirtualGroupItem(api.shared.virtualGroups[0], 1));
+      await run('runGroup', new VirtualGroupItem(groupsOf(api.shared)[0], 1));
       await waitForRunning('long-running-2');
       assert.deepStrictEqual(started, ['long-running-2']);
       assert.deepStrictEqual(runningNames(), ['long-running', 'long-running-2']);
@@ -105,7 +105,7 @@ suite('Task commands', () => {
         started.push(task.name);
         return executeTask(task);
       });
-      await run('runGroup', new VirtualGroupItem(api.shared.virtualGroups[0], 0));
+      await run('runGroup', new VirtualGroupItem(groupsOf(api.shared)[0], 0));
       assert.deepStrictEqual(started, ['long-running-2', 'quick', 'long-running']);
     });
 
@@ -117,7 +117,7 @@ suite('Task commands', () => {
         if (task.name === 'quick') { throw new Error('boom'); }
         return executeTask(task);
       }) as typeof vscode.tasks.executeTask);
-      await run('runGroup', new VirtualGroupItem(api.shared.virtualGroups[0], 0));
+      await run('runGroup', new VirtualGroupItem(groupsOf(api.shared)[0], 0));
       await waitForRunning('long-running');
       assert.deepStrictEqual(messages.error, ['Failed to run task "quick": boom']);
     });
@@ -145,7 +145,7 @@ suite('Task commands', () => {
       await waitForRunning('long-running');
       await waitForRunning('long-running-2');
 
-      await run('stopGroup', new VirtualGroupItem(api.shared.virtualGroups[0], 1));
+      await run('stopGroup', new VirtualGroupItem(groupsOf(api.shared)[0], 1));
 
       await waitFor(() => runningNames().length === 1, 'the group task to stop');
       assert.deepStrictEqual(runningNames(), ['long-running-2']);

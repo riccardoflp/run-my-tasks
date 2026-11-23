@@ -11,7 +11,7 @@ A VS Code extension that gives you fast access to all workspace tasks and launch
 **Side panel** — a "Run My Tasks" view in the Activity Bar is split into three sections:
 
 - **Groups** — virtual groups you create to organize and batch-run tasks and launch configurations. Each group has inline **Run All** and **Stop All** buttons. Tasks within a group can be reordered with **Move Up** / **Move Down** (right-click menu) or by dragging. Groups themselves can also be reordered the same way. Groups belong to the git repository: every window opened on it, worktrees included, shows the same groups.
-- **Tasks** — all workspace tasks listed by source. Tasks show a green spinning indicator while running and have inline **Run** / **Stop** buttons. Right-click a task to add it to a group.
+- **Tasks** — all workspace tasks listed by source (by folder first, in a multi-root workspace). Tasks show a green spinning indicator while running and have inline **Run** / **Stop** buttons. Right-click a task to add it to a group.
 - **Launch Configurations** — the configurations and compounds of `launch.json`. They show the same indicator while a debug session is running and have inline **Start Debugging** / **Stop** buttons; right-click one to **Run Without Debugging** or to add it to a group.
 
 Click a running task to focus the terminal it is running in, or a running launch configuration to show the Debug Console.
@@ -24,9 +24,17 @@ Click a running task to focus the terminal it is running in, or a running launch
 
 **Drag and drop** — drag a task from the **Tasks** view, or a launch configuration from the **Launch Configurations** view, onto a group header in the **Groups** view to add it to that group. Drag a task within the **Groups** view onto another task to reorder, or onto a different group header to move it; the same goes for launch configurations.
 
-**Import and export groups** — **Export Groups...** in the `...` menu of the **Groups** view saves the groups you pick to a JSON file; **Import Groups...** adds the groups of such a file to the ones you have, in another workspace or on another machine. For a group named as an existing one you choose whether to merge the two (adding the tasks and launch configurations it lacks), replace it or skip it. Groups refer to tasks and launch configurations by name: the import tells you which ones the workspace lacks.
+**Multi-root workspaces** — in a `.code-workspace` with several folders every task and group tells where it comes from:
 
-The picker groups tasks by source (Workspace tasks first, then extension-contributed tasks in alphabetical order), lists the launch configurations last, and optionally shows the underlying shell command, npm script or debugger type as a detail line.
+- The **Tasks** view lists the tasks by folder, then by source; the tasks of the `.code-workspace` file and the user tasks come last, under the name of the workspace file (e.g. `shop.code-workspace`) and **User**. The picker does the same in its separators (`api · npm`), and the search matches the folder names too.
+- The **Groups** view shows one node per project, with the groups of that project: the same groups you see opening the project's repository on its own, worktrees included (the folders of one repository make one project). A group of a project runs the tasks and launch configurations of that project, even when another folder has some with the same name. The **+** button on a project creates a group in it.
+- The groups mixing the projects live under **Workspace**: their tasks keep the folder they come from, shown next to their name. Drag a task onto one of them, or pick it with **Add to Group**; a project's group takes only the tasks of that project (and the user tasks).
+- The **Groups** and **Tasks** views follow the **Repositories** view of Source Control: select one or more repositories there and only their projects are shown (`runMyTasks.followScmSelection`). The projects outside git and the **Workspace** groups are always shown.
+- **Open tasks.json** / **Open launch.json** ask which folder's file to open.
+
+**Import and export groups** — **Export Groups...** in the `...` menu of the **Groups** view saves the groups you pick (of one project at a time, in a multi-root workspace) to a JSON file; **Import Groups...** adds the groups of such a file to the ones you have, in another workspace or on another machine. For a group named as an existing one you choose whether to merge the two (adding the tasks and launch configurations it lacks), replace it or skip it. Groups refer to tasks and launch configurations by name: the import tells you which ones the workspace lacks.
+
+The picker groups tasks by source (by folder first in a multi-root workspace; Workspace tasks first, then extension-contributed tasks in alphabetical order), lists the launch configurations last, and optionally shows the underlying shell command, npm script or debugger type as a detail line.
 
 ## Requirements
 
@@ -41,6 +49,7 @@ All settings are under the `runMyTasks` namespace and can be changed in **Settin
 |---|---|---|---|
 | `runMyTasks.statusBarAlignment` | `"left"` \| `"right"` | `"left"` | Side of the status bar where the Tasks button appears. |
 | `runMyTasks.statusBarPriority` | `number` | `100` | Position priority within the chosen side. Higher numbers place the button further left on the Left side (VS Code default behavior). |
+| `runMyTasks.followScmSelection` | `boolean` | `true` | In a multi-root workspace, show in the **Groups** and **Tasks** views only the projects whose git repository is selected in the **Repositories** view of Source Control. With no repository selected everything is shown. |
 | `runMyTasks.showTaskType` | `boolean` | `true` | Show the shell command or npm script (the debugger type for launch configurations) as a detail line below each name in the picker. Disable if you prefer a cleaner list. |
 | `runMyTasks.terminalLocation` | `"panel"` \| `"editor"` | `"panel"` | Where the terminals of the tasks started from Run My Tasks (side panel, picker, **Run Group**) open. Tasks whose `presentation.reveal` is not `always` keep their terminal in the panel. |
 | `runMyTasks.editorTerminalLayout` | `"split"` \| `"group"` \| `"tab"` | `"split"` | When the terminals open in the editor: `split` opens each one in its own editor group, after the files you are working on and the other terminals; `group` opens them all as tabs of one group next to the files; `tab` opens them as full tabs of the current group, without creating a new group. |

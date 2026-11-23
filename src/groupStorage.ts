@@ -1,88 +1,65 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import * as vscode from 'vscode';
+import { findGitCommonDir } from './gitRepo';
+import { GroupScope, WORKSPACE_SCOPE_ID } from './projects';
 import { VirtualGroup } from './taskTreeProvider';
 
+export { findGitCommonDir };
+
+// Groups of a window outside a git repository, or of the workspace scope of a multi-root workspace
 const GROUPS_KEY = 'virtualGroups';
 // Groups of every git repository, keyed by the repository's common git directory
 const GROUPS_BY_REPO_KEY = 'virtualGroupsByRepo';
+// Groups of the folders of a multi-root workspace outside a git repository, keyed by scope id
+const GROUPS_BY_FOLDER_KEY = 'virtualGroupsByFolder';
 
-type GroupsByRepo = Record<string, VirtualGroup[]>;
-
-/**
- * The common git directory of the repository containing `folder`: the same for the main
- * checkout and all its worktrees. Undefined when `folder` is not inside a git repository.
- */
-export function findGitCommonDir(folder: string): string | undefined {
-  for (let dir = path.resolve(folder); ; dir = path.dirname(dir)) {
-    const dotGit = path.join(dir, '.git');
-    const stat = fs.statSync(dotGit, { throwIfNoEntry: false });
-    if (stat?.isDirectory()) {
-      return normalize(dotGit);
-    }
-    if (stat?.isFile()) {
-      // A worktree: .git is a file pointing to <common dir>/worktrees/<name>, whose
-      // commondir file points back to the common dir
-      const match = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
-      if (!match) { return undefined; }
-      const gitDir = path.resolve(dir, match[1].trim());
-      const commonDirFile = path.join(gitDir, 'commondir');
-      if (!fs.existsSync(commonDirFile)) { return normalize(gitDir); }
-      return normalize(path.resolve(gitDir, fs.readFileSync(commonDirFile, 'utf8').trim()));
-    }
-    if (path.dirname(dir) === dir) { return undefined; }
-  }
-}
-
-function normalize(dir: string): string {
-  const resolved = path.resolve(dir);
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-}
-
-// The repository a single-folder window works in; multi-root workspaces keep their own groups
-function workspaceRepo(): string | undefined {
-  const folders = vscode.workspace.workspaceFolders;
-  if (vscode.workspace.workspaceFile || folders?.length !== 1 || folders[0].uri.scheme !== 'file') {
-    return undefined;
-  }
-  try {
-    return findGitCommonDir(folders[0].uri.fsPath);
-  } catch {
-    return undefined;
-  }
-}
+type GroupsByKey = Record<string, VirtualGroup[]>;
 
 export interface GroupStorage {
-  load(): VirtualGroup[];
-  save(groups: VirtualGroup[]): Promise<void>;
+  load(scope: GroupScope): VirtualGroup[];
+  save(scope: GroupScope, groups: VirtualGroup[]): Promise<void>;
 }
 
 /**
- * Groups are shared by all the windows opened on the same git repository, worktrees included,
- * through globalState; outside a repository they stay in the workspaceState.
+ * The groups of a project in a git repository are shared by all the windows opened on it,
+ * worktrees and multi-root workspaces including it too, through globalState; the others stay
+ * in the workspaceState.
  */
 export function createGroupStorage(context: vscode.ExtensionContext): GroupStorage {
-  const repo = workspaceRepo();
-  if (!repo) {
-    return {
-      load: () => context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []),
-      save: groups => Promise.resolve(context.workspaceState.update(GROUPS_KEY, groups)),
-    };
-  }
-
-  // Read the map again on every access: other windows update it too
-  const byRepo = (): GroupsByRepo => context.globalState.get<GroupsByRepo>(GROUPS_BY_REPO_KEY, {});
-  const storage: GroupStorage = {
-    load: () => byRepo()[repo] ?? [],
-    save: groups => Promise.resolve(
-      context.globalState.update(GROUPS_BY_REPO_KEY, { ...byRepo(), [repo]: groups }),
-    ),
+  // Read the maps again on every access: other windows update them too
+  const map = (memento: vscode.Memento, key: string): GroupsByKey => memento.get<GroupsByKey>(key, {});
+  const location = (scope: GroupScope): { memento: vscode.Memento; key: string; entry?: string } => {
+    if (scope.repo) { return { memento: context.globalState, key: GROUPS_BY_REPO_KEY, entry: scope.repo }; }
+    if (scope.id === WORKSPACE_SCOPE_ID) { return { memento: context.workspaceState, key: GROUPS_KEY }; }
+    return { memento: context.workspaceState, key: GROUPS_BY_FOLDER_KEY, entry: scope.id };
   };
 
-  // Groups saved by earlier versions in this workspace become the groups of the repository
+  return {
+    load: scope => {
+      const { memento, key, entry } = location(scope);
+      return entry === undefined ? memento.get<VirtualGroup[]>(key, []) : map(memento, key)[entry] ?? [];
+    },
+    save: (scope, groups) => {
+      const { memento, key, entry } = location(scope);
+      const value = entry === undefined ? groups : { ...map(memento, key), [entry]: groups };
+      return Promise.resolve(memento.update(key, value));
+    },
+  };
+}
+
+/**
+ * Groups saved by versions before 0.6 in the workspace of a single-folder window become the
+ * groups of its repository, unless the repository has groups already.
+ */
+export async function migrateLegacyGroups(
+  context: vscode.ExtensionContext,
+  storage: GroupStorage,
+  scopes: readonly GroupScope[],
+): Promise<void> {
+  const [scope] = scopes;
+  if (scopes.length !== 1 || !scope.repo) { return; }
   const legacy = context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
-  if (legacy.length > 0 && !(repo in byRepo())) {
-    void storage.save(legacy);
+  const byRepo = context.globalState.get<GroupsByKey>(GROUPS_BY_REPO_KEY, {});
+  if (legacy.length > 0 && !(scope.repo in byRepo)) {
+    await storage.save(scope, legacy);
   }
-  return storage;
 }

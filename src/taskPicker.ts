@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { getLaunchConfigs, LaunchConfig, startLaunch } from './launchConfigs';
+import { compareOrigins, isMultiRoot, TaskOrigin, taskOrigin, workspaceFileLabel } from './projects';
 import { runTask } from './taskTerminals';
 
 interface TaskQuickPickItem extends vscode.QuickPickItem {
@@ -31,26 +32,32 @@ export async function showTaskPicker(): Promise<void> {
   const config = vscode.workspace.getConfiguration('runMyTasks');
   const showType = config.get<boolean>('showTaskType', true);
 
-  // Group tasks by source, Workspace first then alphabetical
-  const groups = new Map<string, vscode.Task[]>();
+  // Group tasks by source, Workspace first then alphabetical. In a multi-root workspace by
+  // origin (folder, workspace file, user tasks) first, so the separators tell where each task comes from
+  const multiRoot = isMultiRoot();
+  const sections = new Map<string, { origin: TaskOrigin; source: string; tasks: vscode.Task[] }>();
   for (const task of tasks) {
-    const bucket = groups.get(task.source) ?? [];
-    bucket.push(task);
-    groups.set(task.source, bucket);
+    const origin = taskOrigin(task);
+    const key = multiRoot ? `${origin.key}\u0000${task.source}` : task.source;
+    const section = sections.get(key) ?? { origin, source: task.source, tasks: [] };
+    section.tasks.push(task);
+    sections.set(key, section);
   }
-  const sortedSources = [...groups.keys()].sort((a, b) => {
+  const compareSources = (a: string, b: string): number => {
+    if (a === b) { return 0; }
     if (a === 'Workspace') { return -1; }
     if (b === 'Workspace') { return 1; }
     return a.localeCompare(b);
-  });
+  };
+  const sortedSections = [...sections.values()].sort((a, b) =>
+    (multiRoot ? compareOrigins(a.origin, b.origin) : 0) || compareSources(a.source, b.source));
 
   const items: vscode.QuickPickItem[] = [];
-  for (const source of sortedSources) {
-    items.push({ label: source, kind: vscode.QuickPickItemKind.Separator });
+  for (const section of sortedSections) {
+    const label = multiRoot ? `${section.origin.label} · ${section.source}` : section.source;
+    items.push({ label, kind: vscode.QuickPickItemKind.Separator });
 
-    const sourceTasks = (groups.get(source) ?? []).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
+    const sourceTasks = section.tasks.sort((a, b) => a.name.localeCompare(b.name));
     for (const task of sourceTasks) {
       const item: TaskQuickPickItem = {
         label: `$(run) ${task.name}`,
@@ -69,6 +76,7 @@ export async function showTaskPicker(): Promise<void> {
     for (const launch of launches) {
       const item: LaunchQuickPickItem = {
         label: `$(debug-alt) ${launch.name}`,
+        ...(multiRoot ? { description: launch.folder?.name ?? workspaceFileLabel() } : {}),
         launch,
       };
       if (showType) {
