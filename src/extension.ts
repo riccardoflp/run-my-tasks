@@ -22,7 +22,7 @@ import {
 } from './projects';
 import { ScmSelection } from './scmSelection';
 import { createStatusBarItem } from './statusBar';
-import { runningTaskKeys, taskKey } from './taskIdentity';
+import { runningTaskKeys, taskKey, terminateTask, trackTaskStarts } from './taskIdentity';
 import { showTaskPicker } from './taskPicker';
 import { findTaskTerminal, runTask, TerminalLocation, trackTaskTerminals } from './taskTerminals';
 import {
@@ -217,6 +217,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
   // Redraw the views on task lifecycle events
   context.subscriptions.push(
+    trackTaskStarts(),
     trackTaskTerminals(),
     vscode.tasks.onDidStartTask(e => {
       shared.pendingStop.delete(taskKey(e.execution.task));
@@ -319,7 +320,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       const execution = vscode.tasks.taskExecutions.find(e => taskKey(e.task) === key);
       if (execution) {
         markStopped(execution.task);
-        execution.terminate();
+        terminateTask(execution);
       }
     }),
   );
@@ -749,7 +750,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       for (const execution of vscode.tasks.taskExecutions) {
         if (keys.has(taskKey(execution.task))) {
           markStopped(execution.task);
-          execution.terminate();
+          terminateTask(execution);
         }
       }
 

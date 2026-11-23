@@ -23,9 +23,18 @@ export async function getTask(name: string): Promise<vscode.Task> {
   return task;
 }
 
+// A task terminated right after it starts may not be known to VS Code yet ("Task to terminate not found"), and keeps
+// running: terminate the tasks left every second until none is
 export async function stopAllTasks(): Promise<void> {
-  for (const e of vscode.tasks.taskExecutions) { e.terminate(); }
-  await waitFor(() => vscode.tasks.taskExecutions.length === 0, 'all tasks to stop');
+  let lastTerminate = 0;
+  await waitFor(() => {
+    if (vscode.tasks.taskExecutions.length === 0) { return true; }
+    if (Date.now() - lastTerminate >= 1000) {
+      lastTerminate = Date.now();
+      for (const e of vscode.tasks.taskExecutions) { e.terminate(); }
+    }
+    return false;
+  }, 'all tasks to stop');
 }
 
 export function disposeAllTerminals(): void {

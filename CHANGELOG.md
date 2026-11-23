@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - In a multi-root workspace a group no longer runs, stops or shows the task of another folder that has the same name
+- **Stop** and **Stop Group** stop a task started a moment before too: VS Code refused to stop a task it had not finished starting, which went on running while shown as stopped
 
 ## [0.8.1] - 2026-11-18
 
