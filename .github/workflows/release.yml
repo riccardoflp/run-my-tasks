@@ -1,0 +1,84 @@
+# Publishes the extension to the VS Code Marketplace when a version tag (vX.Y.Z) is pushed.
+# The tag must match the version of package.json. Needs the VSCE_PAT secret: an Azure DevOps
+# personal access token with the Marketplace (Manage) scope, for the RiccardoFilippozzi publisher.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  # Publishes an existing tag again, e.g. after fixing the token
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. v0.9.0)'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  test:
+    # The integration tests run in VS Code; on Windows, as in development
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    # Add required reviewers to this environment on GitHub to approve each publication
+    environment: marketplace
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Check that the tag matches the version of package.json
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG does not match the version $version of package.json"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Package
+        run: npx vsce package --out "run-my-tasks-$VERSION.vsix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-my-tasks-${{ env.VERSION }}
+          path: run-my-tasks-${{ env.VERSION }}.vsix
+
+      - name: Publish to the Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::error::The VSCE_PAT secret is not set"
+            exit 1
+          fi
+          # --skip-duplicate: running it again for a version already published is not an error
+          npx vsce publish --packagePath "run-my-tasks-$VERSION.vsix" --skip-duplicate
