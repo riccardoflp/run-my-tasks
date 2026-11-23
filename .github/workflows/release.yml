@@ -1,84 +1,103 @@
-# Publishes the extension to the VS Code Marketplace when a version tag (vX.Y.Z) is pushed.
-# The tag must match the version of package.json. Needs the VSCE_PAT secret: an Azure DevOps
-# personal access token with the Marketplace (Manage) scope, for the RiccardoFilippozzi publisher.
+# The release: a tag vX.Y.Z pushed by the maintainer, on a commit of master whose package.json has the version X.Y.Z and
+# whose CHANGELOG has its section "## [X.Y.Z] - <date>", runs the tests on that commit. Once they pass, the vsix waits in
+# the environment `marketplace` for the maintainer's approval and is then published on the Marketplace by trusted
+# publishing (vsce publish --oidc), with no token stored: the Marketplace's policy for the publisher RiccardoFilippozzi
+# names this repository, this workflow and that environment. It can be run again by hand on the same tag, from the
+# Actions tab with the tag chosen in "Use workflow from": a version already on the Marketplace is left as it is.
+
 name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
-  # Publishes an existing tag again, e.g. after fixing the token
+    tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to publish (e.g. v0.9.0)'
-        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  TAG: ${{ github.event.inputs.tag || github.ref_name }}
-
 jobs:
+  version:
+    name: The tag and the version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # The whole history, for the check that the tag is on master.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The tag names the version, which has its section in the CHANGELOG, on master
+        id: version
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            echo "::error::A release runs on a tag: push vX.Y.Z, or choose the tag in \"Use workflow from\"."
+            exit 1
+          fi
+          version=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, but package.json has the version $version."
+            exit 1
+          fi
+          if ! grep -qF "## [$version] - " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section \"## [$version] - <date>\"."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/master; then
+            echo "::error::The commit of $GITHUB_REF_NAME is not on master."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Run My Tasks $version."
+
   test:
-    # The integration tests run in VS Code; on Windows, as in development
+    name: Tests and package
+    needs: version
+    # The integration tests run in VS Code, on Windows as in development.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm test
-
-  publish:
-    needs: test
-    runs-on: ubuntu-latest
-    # Add required reviewers to this environment on GitHub to approve each publication
-    environment: marketplace
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-
-      - name: Check that the tag matches the version of package.json
+      # The package published below is the one made from the commit the tests ran on.
+      - name: vsce package
         shell: bash
-        run: |
-          version=$(node -p "require('./package.json').version")
-          if [ "$TAG" != "v$version" ]; then
-            echo "::error::Tag $TAG does not match the version $version of package.json"
-            exit 1
-          fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-
-      - name: Package
-        run: npx vsce package --out "run-my-tasks-$VERSION.vsix"
-
+        run: npx vsce package --out "run-my-tasks-${{ needs.version.outputs.version }}.vsix"
       - uses: actions/upload-artifact@v4
         with:
-          name: run-my-tasks-${{ env.VERSION }}
-          path: run-my-tasks-${{ env.VERSION }}.vsix
+          name: vsix
+          path: run-my-tasks-${{ needs.version.outputs.version }}.vsix
+          if-no-files-found: error
 
-      - name: Publish to the Marketplace
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: |
-          if [ -z "$VSCE_PAT" ]; then
-            echo "::error::The VSCE_PAT secret is not set"
-            exit 1
-          fi
-          # --skip-duplicate: running it again for a version already published is not an error
-          npx vsce publish --packagePath "run-my-tasks-$VERSION.vsix" --skip-duplicate
+  marketplace:
+    name: Publish on the Marketplace
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    # The maintainer's approval: the environment asks for it before this job starts, and the Marketplace's trusted
+    # publishing policy names it, so that no other job can publish.
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      # vsce at the version of package-lock.json, which has --oidc from 4.1.
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: vsix
+      - name: vsce publish --oidc
+        run: npx vsce publish --oidc --skip-duplicate --packagePath "vsix/run-my-tasks-${{ needs.version.outputs.version }}.vsix"
