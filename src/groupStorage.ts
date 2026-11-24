@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { findGitCommonDir } from './gitRepo';
+import { canonicalGitDir, findGitCommonDir } from './gitRepo';
 import { GroupScope, WORKSPACE_SCOPE_ID } from './projects';
 import { VirtualGroup } from './taskTreeProvider';
 
@@ -13,6 +13,14 @@ const GROUPS_BY_REPO_KEY = 'virtualGroupsByRepo';
 const GROUPS_BY_FOLDER_KEY = 'virtualGroupsByFolder';
 
 type GroupsByKey = Record<string, VirtualGroup[]>;
+
+/**
+ * The key the groups of the repository `repo` were saved under before 0.9, when the key was the path
+ * the repository was opened by rather than its real path: the key of `groups` that leads to `repo`
+ */
+function savedKeyOf(groups: GroupsByKey, repo: string): string | undefined {
+  return Object.keys(groups).find(key => key !== repo && canonicalGitDir(key) === repo);
+}
 
 export interface GroupStorage {
   load(scope: GroupScope): VirtualGroup[];
@@ -36,7 +44,9 @@ export function createGroupStorage(context: vscode.ExtensionContext): GroupStora
   return {
     load: scope => {
       const { memento, key, entry } = location(scope);
-      return entry === undefined ? memento.get<VirtualGroup[]>(key, []) : map(memento, key)[entry] ?? [];
+      if (entry === undefined) { return memento.get<VirtualGroup[]>(key, []); }
+      const groups = map(memento, key);
+      return groups[entry] ?? groups[savedKeyOf(groups, entry) ?? ''] ?? [];
     },
     save: (scope, groups) => {
       const { memento, key, entry } = location(scope);
@@ -59,7 +69,7 @@ export async function migrateLegacyGroups(
   if (scopes.length !== 1 || !scope.repo) { return; }
   const legacy = context.workspaceState.get<VirtualGroup[]>(GROUPS_KEY, []);
   const byRepo = context.globalState.get<GroupsByKey>(GROUPS_BY_REPO_KEY, {});
-  if (legacy.length > 0 && !(scope.repo in byRepo)) {
+  if (legacy.length > 0 && !(scope.repo in byRepo) && savedKeyOf(byRepo, scope.repo) === undefined) {
     await storage.save(scope, legacy);
   }
 }

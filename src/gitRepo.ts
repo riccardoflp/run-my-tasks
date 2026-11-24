@@ -10,7 +10,7 @@ export function findGitCommonDir(folder: string): string | undefined {
     const dotGit = path.join(dir, '.git');
     const stat = fs.statSync(dotGit, { throwIfNoEntry: false });
     if (stat?.isDirectory()) {
-      return normalize(dotGit);
+      return canonicalGitDir(dotGit);
     }
     if (stat?.isFile()) {
       // A worktree: .git is a file pointing to <common dir>/worktrees/<name>, whose
@@ -19,14 +19,24 @@ export function findGitCommonDir(folder: string): string | undefined {
       if (!match) { return undefined; }
       const gitDir = path.resolve(dir, match[1].trim());
       const commonDirFile = path.join(gitDir, 'commondir');
-      if (!fs.existsSync(commonDirFile)) { return normalize(gitDir); }
-      return normalize(path.resolve(gitDir, fs.readFileSync(commonDirFile, 'utf8').trim()));
+      if (!fs.existsSync(commonDirFile)) { return canonicalGitDir(gitDir); }
+      return canonicalGitDir(path.resolve(gitDir, fs.readFileSync(commonDirFile, 'utf8').trim()));
     }
     if (path.dirname(dir) === dir) { return undefined; }
   }
 }
 
-function normalize(dir: string): string {
-  const resolved = path.resolve(dir);
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+/**
+ * The key of a git directory: its real path, so that a repository opened through a symbolic link, a
+ * junction or a short 8.3 name (C:\Users\RUNNER~1) gets the key of its worktrees, whose .git file
+ * git writes with the real path. In lower case on Windows, whose paths ignore it.
+ */
+export function canonicalGitDir(dir: string): string {
+  let real = path.resolve(dir);
+  try {
+    real = fs.realpathSync.native(real);
+  } catch {
+    // A git directory that is gone keeps the path it had
+  }
+  return process.platform === 'win32' ? real.toLowerCase() : real;
 }
