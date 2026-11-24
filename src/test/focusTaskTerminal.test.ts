@@ -6,7 +6,7 @@ import { disposeAllTerminals, getTask, stopAllTasks, waitFor } from './helpers';
 suite('focusTaskTerminal', () => {
   teardown(async () => {
     await stopAllTasks();
-    disposeAllTerminals();
+    await disposeAllTerminals();
   });
 
   test('clicking a running task item is wired to the focus command', async () => {

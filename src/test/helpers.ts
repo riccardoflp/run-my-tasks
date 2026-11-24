@@ -37,8 +37,10 @@ export async function stopAllTasks(): Promise<void> {
   }, 'all tasks to stop');
 }
 
-export function disposeAllTerminals(): void {
+// Closes every terminal and waits until they are gone: a task started meanwhile could get one that is closing
+export async function disposeAllTerminals(): Promise<void> {
   for (const t of vscode.window.terminals) { t.dispose(); }
+  await waitFor(() => vscode.window.terminals.length === 0, 'the terminals to close');
 }
 
 export async function getApi(): Promise<ExtensionApi> {

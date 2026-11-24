@@ -35,7 +35,7 @@ suite('Task commands', () => {
   teardown(async () => {
     restoreStubs();
     await stopAllTasks();
-    disposeAllTerminals();
+    await disposeAllTerminals();
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 

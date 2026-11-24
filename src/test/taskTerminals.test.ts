@@ -55,7 +55,7 @@ suite('Task terminals', () => {
       () => vscode.window.tabGroups.all.length === 1 && vscode.window.tabGroups.all[0].tabs.length === 0,
       'the editor groups to close',
     );
-    disposeAllTerminals();
+    await disposeAllTerminals();
     // A terminal still closing would be taken for the terminal of the next test, having the same title
     await waitFor(() => vscode.window.terminals.length === 0, 'the terminals to close');
   });

@@ -48,7 +48,7 @@ suite('Launch configurations', () => {
     restoreStubs();
     await stopAllDebugSessions();
     await stopAllTasks();
-    disposeAllTerminals();
+    await disposeAllTerminals();
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 

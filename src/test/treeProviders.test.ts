@@ -18,7 +18,7 @@ suite('Tree providers', () => {
   teardown(async () => {
     restoreStubs();
     await stopAllTasks();
-    disposeAllTerminals();
+    await disposeAllTerminals();
   });
 
   test('a name of a group stands for the task of tasks.json when a provider has one with the same name', async () => {

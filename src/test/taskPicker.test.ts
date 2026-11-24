@@ -24,7 +24,7 @@ suite('Task picker', () => {
     restoreStubs();
     await stopAllTasks();
     await stopAllDebugSessions();
-    disposeAllTerminals();
+    await disposeAllTerminals();
   });
 
   test('lists tasks by source, Workspace first, sorted by name, with the command as detail', async () => {
