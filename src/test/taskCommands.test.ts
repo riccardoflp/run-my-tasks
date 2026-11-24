@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../extension';
-import { taskKey } from '../taskIdentity';
+import { taskKey, terminateTask } from '../taskIdentity';
 import { groupsOf, TaskTreeItem, VirtualGroupItem } from '../taskTreeProvider';
 import {
   answerQuickPicks,
@@ -74,6 +74,32 @@ suite('Task commands', () => {
     await vscode.tasks.executeTask(await getTask('quick'));
     await ended;
     assert.strictEqual(api.shared.cachedTasks, cached);
+  });
+
+  suite('terminateTask', () => {
+    // An execution of the task that only records being terminated
+    const fakeExecution = (task: vscode.Task) => {
+      const execution = { task, terminated: false, terminate: () => { execution.terminated = true; } };
+      return execution;
+    };
+
+    test('a task VS Code has not finished starting is terminated once it has started', async () => {
+      const task = await getTask('long-running');
+      const early = fakeExecution(task);
+      terminateTask(early as unknown as vscode.TaskExecution);
+      await vscode.tasks.executeTask(task);
+      await waitFor(() => runningNames().length === 0, 'the task to stop as soon as it starts');
+      // Through the execution VS Code reported started
+      assert.strictEqual(early.terminated, false);
+    });
+
+    test('a task that never starts is not terminated once the wait is over', async () => {
+      const early = fakeExecution(await getTask('long-running-2'));
+      terminateTask(early as unknown as vscode.TaskExecution);
+      await new Promise(r => setTimeout(r, 5500));
+      assert.strictEqual(early.terminated, false);
+      assert.deepStrictEqual(runningNames(), []);
+    });
   });
 
   suite('runGroup', () => {

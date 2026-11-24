@@ -2,20 +2,20 @@ import * as vscode from 'vscode';
 import { GroupScope } from './projects';
 
 // The part of the API of the built-in git extension (vscode.git, API version 1) used here
-interface GitRepository {
+export interface GitRepository {
   readonly rootUri: vscode.Uri;
   // Selection of the repository in the Repositories view of Source Control
   readonly ui: { readonly selected: boolean; readonly onDidChange: vscode.Event<void> };
 }
 
-interface GitApi {
+export interface GitApi {
   readonly repositories: GitRepository[];
   readonly onDidOpenRepository: vscode.Event<GitRepository>;
   readonly onDidCloseRepository: vscode.Event<GitRepository>;
   getRepository(uri: vscode.Uri): GitRepository | null;
 }
 
-interface GitExtension {
+export interface GitExtension {
   readonly enabled: boolean;
   getAPI(version: 1): GitApi;
 }
@@ -34,7 +34,11 @@ export class ScmSelection implements vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changed.event;
 
-  constructor() {
+  // The git extension is looked up by the tests too, which may hand a fake one
+  constructor(
+    private readonly gitExtension: () => vscode.Extension<GitExtension> | undefined =
+      () => vscode.extensions.getExtension<GitExtension>('vscode.git'),
+  ) {
     this.disposables.push(
       this.changed,
       vscode.workspace.onDidChangeConfiguration(e => {
@@ -47,7 +51,7 @@ export class ScmSelection implements vscode.Disposable {
   // The git extension may be disabled, or git missing: then every project stays visible
   private async connect(): Promise<void> {
     try {
-      const extension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+      const extension = this.gitExtension();
       if (!extension) { return; }
       const git = extension.isActive ? extension.exports : await extension.activate();
       if (!git.enabled) { return; }

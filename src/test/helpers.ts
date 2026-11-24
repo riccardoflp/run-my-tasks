@@ -84,7 +84,9 @@ export function answerQuickPicks(
     const resolved = [...await items];
     offered.push(resolved);
     const next = choose.shift();
-    if (!next) { throw new Error('Unexpected showQuickPick call'); }
+    if (!next) {
+      throw new Error(`Unexpected showQuickPick call offering ${resolved.map(i => (typeof i === 'string' ? i : i.label)).join(', ')}`);
+    }
     return next(resolved);
   }) as typeof vscode.window.showQuickPick);
   return offered;

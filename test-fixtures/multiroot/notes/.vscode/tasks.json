@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "todo",
+      "type": "shell",
+      "command": "node -e \"0\"",
+      "problemMatcher": []
+    }
+  ]
+}

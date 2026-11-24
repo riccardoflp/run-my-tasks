@@ -83,6 +83,10 @@ export interface ExtensionApi {
   readonly shared: SharedState;
   // Saves the groups of the scope; the first one (the only one of a single-folder window) by default
   saveGroups(groups: VirtualGroup[], scope?: GroupScope): Promise<void>;
+  // The groups of the scope as saved, which other windows may have changed
+  loadGroups(scope: GroupScope): VirtualGroup[];
+  // The Groups, Tasks and Launch Configurations views, whose messages the tests read
+  readonly views: { readonly groups: vscode.TreeView<unknown>; readonly tasks: vscode.TreeView<unknown>; readonly launch: vscode.TreeView<unknown> };
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -136,7 +140,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       dragAndDropController: new LaunchDragController(),
     }),
   ];
-  const [groupsView, tasksView] = views;
+  const [groupsView, tasksView, launchView] = views;
   context.subscriptions.push(...views);
 
   // Redraws the views with the cached tasks: their running state changed, not the tasks themselves
@@ -758,7 +762,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { shared, saveGroups };
+  return { shared, saveGroups, loadGroups: scope => groupStorage.load(scope), views: { groups: groupsView, tasks: tasksView, launch: launchView } };
 }
 
 export function deactivate(): void {}

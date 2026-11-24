@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "debug-api",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/idle.js",
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "folders": [
+    {
+      "path": "api"
+    },
+    {
+      "path": "web"
+    },
+    {
+      "path": "web-feature"
+    },
+    {
+      "path": "notes"
+    }
+  ],
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "everything",
+        "type": "shell",
+        "command": "node -e \"0\"",
+        "problemMatcher": []
+      }
+    ]
+  },
+  "settings": {
+    "scm.alwaysShowRepositories": true,
+    "scm.repositories.selectionMode": "single",
+    "scm.repositories.sortOrder": "path"
+  }
+}
