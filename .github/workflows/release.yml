@@ -27,7 +27,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       # The whole history, for the check that the tag is on master.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: The tag names the version, which has its section in the CHANGELOG, on master
@@ -60,8 +60,8 @@ jobs:
     # The integration tests run in VS Code, on Windows as in development.
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -71,7 +71,7 @@ jobs:
       - name: vsce package
         shell: bash
         run: npx vsce package --out "run-my-tasks-${{ needs.version.outputs.version }}.vsix"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: vsix
           path: run-my-tasks-${{ needs.version.outputs.version }}.vsix
@@ -88,14 +88,14 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
       # vsce at the version of package-lock.json, which has --oidc from 4.1.
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: vsix
           path: vsix
