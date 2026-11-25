@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { createGroupStorage, findGitCommonDir } from '../groupStorage';
+import { findGitDirs } from '../gitRepo';
 import { GroupScope } from '../projects';
 
 suite('Group storage', () => {
@@ -30,6 +31,18 @@ suite('Group storage', () => {
     const mainDir = findGitCommonDir(main);
     assert.ok(mainDir);
     assert.strictEqual(findGitCommonDir(worktree), mainDir);
+  });
+
+  test('a worktree has a git dir of its own, the main checkout its common dir', () => {
+    const { main, worktree } = createRepoWithWorktree();
+    const mainDirs = findGitDirs(main);
+    const worktreeDirs = findGitDirs(worktree);
+    assert.ok(mainDirs && worktreeDirs);
+    assert.strictEqual(mainDirs.gitDir, mainDirs.commonDir);
+    assert.strictEqual(worktreeDirs.commonDir, mainDirs.commonDir);
+    assert.notStrictEqual(worktreeDirs.gitDir, mainDirs.gitDir);
+    assert.strictEqual(path.basename(worktreeDirs.gitDir), 'wt');
+    assert.strictEqual(findGitDirs(path.join(root, 'nowhere')), undefined);
   });
 
   test('a folder inside the repository resolves to the repository', () => {

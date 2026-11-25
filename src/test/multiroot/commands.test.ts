@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../../extension';
 import { entryRefFor, GroupScope } from '../../projects';
-import { GroupScopeItem, groupsOf, TaskTreeItem, VirtualGroup, VirtualGroupItem } from '../../taskTreeProvider';
+import { GroupScopeItem, GroupsDragController, groupsOf, TaskTreeItem, VirtualGroup, VirtualGroupItem } from '../../taskTreeProvider';
 import {
   answerInputBox,
   answerOpenDialog,
@@ -38,6 +38,7 @@ suite('Multi-root commands', () => {
   let api: ExtensionApi;
   let apiScope: GroupScope;
   let webScope: GroupScope;
+  let featureScope: GroupScope;
   let notesScope: GroupScope;
   let workspaceScope: GroupScope;
 
@@ -50,7 +51,8 @@ suite('Multi-root commands', () => {
     api = await getApi();
     await followScmSelection(false);
     apiScope = scope(api, 'api');
-    webScope = scope(api, 'web, web-feature');
+    webScope = scope(api, 'web');
+    featureScope = scope(api, 'web-feature');
     notesScope = scope(api, 'notes');
     workspaceScope = scope(api, 'Workspace');
   });
@@ -72,11 +74,11 @@ suite('Multi-root commands', () => {
 
   suite('createGroup', () => {
     test('from the palette asks the project to create the group in', async () => {
-      const offered = answerQuickPicks(pick('web, web-feature'));
+      const offered = answerQuickPicks(pick('web'));
       const prompts = answerInputBox('Dev');
       await run('createGroup');
-      assert.deepStrictEqual(offered.map(offeredAs), [['api', 'web, web-feature', 'notes', 'Workspace · groups mixing the projects']]);
-      assert.strictEqual(prompts[0].prompt, 'Group name in web, web-feature');
+      assert.deepStrictEqual(offered.map(offeredAs), [['api', 'web', 'web-feature', 'notes', 'Workspace · groups mixing the projects']]);
+      assert.strictEqual(prompts[0].prompt, 'Group name in web');
       assert.deepStrictEqual(groupsIn(webScope), [{ name: 'Dev', tasks: [] }]);
       assert.deepStrictEqual(groupsIn(apiScope), []);
     });
@@ -114,16 +116,19 @@ suite('Multi-root commands', () => {
         'todo · notes · Workspace', 'everything · shop.code-workspace · Workspace', 'debug-api · Launch Configuration · api']) {
         assert.ok(entries.includes(entry), `${entry} among ${entries.join(', ')}`);
       }
-      // The group of api cannot take a task of web
-      assert.deepStrictEqual(groups, ['Web · web, web-feature', 'All · Workspace']);
+      // The group of api cannot take a task of web, nor can the project of its worktree, which runs its own build
+      assert.deepStrictEqual(groups, ['Web · web', 'All · Workspace']);
       // A group of the workspace remembers the folder of the task
       assert.deepStrictEqual(groupsIn(workspaceScope), [{ name: 'All', tasks: [entryRefFor(workspaceScope, 'build', folder('web'))] }]);
     });
 
     test('a group of the project stores the bare name', async () => {
       await given(webScope, [{ name: 'Web', tasks: [] }]);
-      answerQuickPicks(pick('Web'));
+      const offered = answerQuickPicks(pick('Web'));
       await run('addTaskToGroup', new TaskTreeItem(await folderTask('preview', 'web-feature'), false));
+      // The group of the repository, in the project of the worktree
+      assert.deepStrictEqual(offered.map(offeredAs), [['Web · web-feature']]);
+      assert.deepStrictEqual(groupsIn(featureScope), [{ name: 'Web', tasks: ['preview'] }]);
       assert.deepStrictEqual(groupsIn(webScope), [{ name: 'Web', tasks: ['preview'] }]);
     });
 
@@ -163,6 +168,20 @@ suite('Multi-root commands', () => {
       assert.deepStrictEqual(runningInFolders(), ['build@web']);
     });
 
+    test('a group of the project of a worktree runs the task of the worktree', async () => {
+      await given(webScope, [{ name: 'Build', tasks: ['build'] }]);
+      await run('runGroup', groupItem(featureScope, 'Build'));
+      await waitFor(() => runningInFolders().length === 1, 'the task to start');
+      assert.deepStrictEqual(runningInFolders(), ['build@web-feature']);
+
+      // and stops it only
+      await vscode.tasks.executeTask(await folderTask('build', 'web'));
+      await waitFor(() => runningInFolders().length === 2, 'the task of web to start');
+      await run('stopGroup', groupItem(featureScope, 'Build'));
+      await waitFor(() => runningInFolders().length === 1, 'the task of the worktree to stop');
+      assert.deepStrictEqual(runningInFolders(), ['build@web']);
+    });
+
     test('a group of the workspace runs the tasks of the folders its entries name', async () => {
       await given(workspaceScope, [{
         name: 'All',
@@ -187,11 +206,39 @@ suite('Multi-root commands', () => {
     test('from the palette offers the groups of every project', async () => {
       await given(apiScope, [{ name: 'Build', tasks: ['serve'] }]);
       await given(webScope, [{ name: 'Build', tasks: ['dev'] }]);
-      const offered = answerQuickPicks(pickIn('Build', 'web, web-feature'));
+      const offered = answerQuickPicks(pickIn('Build', 'web'));
       await run('runGroup');
-      assert.deepStrictEqual(offered.map(offeredAs), [['Build · api', 'Build · web, web-feature']]);
+      // The worktree offers the group it shares with its repository, to run on its checkout
+      assert.deepStrictEqual(offered.map(offeredAs), [['Build · api', 'Build · web', 'Build · web-feature']]);
       await waitFor(() => runningInFolders().length === 1, 'the task to start');
       assert.deepStrictEqual(runningInFolders(), ['dev@web']);
+    });
+  });
+
+  suite('Drag and drop', () => {
+    const drag = async (from: vscode.TreeItem, to: VirtualGroupItem): Promise<Map<string, VirtualGroup[]>> => {
+      const saved = new Map<string, VirtualGroup[]>();
+      const controller = new GroupsDragController(api.shared, async (scopeId, groups) => { saved.set(scopeId, groups); });
+      const dt = new vscode.DataTransfer();
+      controller.handleDrag([from as TaskTreeItem], dt);
+      await controller.handleDrop(to, dt);
+      return saved;
+    };
+
+    test('an entry moves between the groups the projects of a repository and its worktree share', async () => {
+      await given(webScope, [{ name: 'Build', tasks: ['build'] }, { name: 'Dev', tasks: [] }]);
+      const build = new TaskTreeItem(await folderTask('build', 'web'), false, 'Build', webScope.id, 'build');
+      const saved = await drag(build, groupItem(featureScope, 'Dev'));
+      // Saved once, with the entry out of its group and in the other
+      assert.deepStrictEqual([...saved.values()], [[{ name: 'Build', tasks: [] }, { name: 'Dev', tasks: ['build'] }]]);
+    });
+
+    test('a task of the Tasks view goes only to the groups of its own checkout', async () => {
+      await given(webScope, [{ name: 'Build', tasks: [] }]);
+      const messages = captureMessages();
+      const saved = await drag(new TaskTreeItem(await folderTask('build', 'web'), false), groupItem(featureScope, 'Build'));
+      assert.deepStrictEqual([...saved.values()], [[{ name: 'Build', tasks: [] }]]);
+      assert.strictEqual(messages.warning.length, 1);
     });
   });
 
@@ -205,12 +252,12 @@ suite('Multi-root commands', () => {
       await given(apiScope, [{ name: 'Api', tasks: ['serve'] }]);
       await given(webScope, [{ name: 'Web', tasks: ['dev'] }, { name: 'Other', tasks: [] }]);
       const file = vscode.Uri.file(path.join(dir, 'out.json'));
-      const offered = answerQuickPicks(pick('web, web-feature'), pickMany('Web'));
+      const offered = answerQuickPicks(pick('web'), pickMany('Web'));
       const dialogs = answerSaveDialog(file);
       captureMessages();
       await run('exportGroups');
 
-      assert.deepStrictEqual(offered.map(offeredAs)[0], ['api', 'web, web-feature']);
+      assert.deepStrictEqual(offered.map(offeredAs)[0], ['api', 'web', 'web-feature']);
       assert.deepStrictEqual(offered.map(offeredAs)[1], ['Web', 'Other']);
       assert.strictEqual(path.basename(dialogs[0].defaultUri!.fsPath), 'web-groups.json');
       assert.strictEqual(path.dirname(dialogs[0].defaultUri!.fsPath), folder('web').uri.fsPath);
@@ -226,7 +273,7 @@ suite('Multi-root commands', () => {
       const messages = captureMessages();
       await run('importGroups');
 
-      assert.deepStrictEqual(offered.map(offeredAs), [['api', 'web, web-feature', 'notes', 'Workspace · groups mixing the projects']]);
+      assert.deepStrictEqual(offered.map(offeredAs), [['api', 'web', 'web-feature', 'notes', 'Workspace · groups mixing the projects']]);
       assert.deepStrictEqual(groupsIn(notesScope).map(g => [g.name, g.tasks]), [['Mixed', ['build', 'todo']]]);
       // build is a task of api and web, not of notes
       assert.deepStrictEqual(messages.warning, ['Imported 1 group from groups.json. Not found in this workspace: build.']);

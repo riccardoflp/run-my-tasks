@@ -2,15 +2,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * The common git directory of the repository containing `folder`: the same for the main
- * checkout and all its worktrees. Undefined when `folder` is not inside a git repository.
+ * The git directories of the checkout containing `folder`: `gitDir` is its own (.git of the
+ * main checkout, .git/worktrees/<name> of a worktree), `commonDir` the one the main checkout
+ * and all its worktrees share. Undefined when `folder` is not inside a git repository.
  */
-export function findGitCommonDir(folder: string): string | undefined {
+export function findGitDirs(folder: string): { gitDir: string; commonDir: string } | undefined {
   for (let dir = path.resolve(folder); ; dir = path.dirname(dir)) {
     const dotGit = path.join(dir, '.git');
     const stat = fs.statSync(dotGit, { throwIfNoEntry: false });
     if (stat?.isDirectory()) {
-      return canonicalGitDir(dotGit);
+      const gitDir = canonicalGitDir(dotGit);
+      return { gitDir, commonDir: gitDir };
     }
     if (stat?.isFile()) {
       // A worktree: .git is a file pointing to <common dir>/worktrees/<name>, whose
@@ -19,11 +21,21 @@ export function findGitCommonDir(folder: string): string | undefined {
       if (!match) { return undefined; }
       const gitDir = path.resolve(dir, match[1].trim());
       const commonDirFile = path.join(gitDir, 'commondir');
-      if (!fs.existsSync(commonDirFile)) { return canonicalGitDir(gitDir); }
-      return canonicalGitDir(path.resolve(gitDir, fs.readFileSync(commonDirFile, 'utf8').trim()));
+      const commonDir = fs.existsSync(commonDirFile)
+        ? path.resolve(gitDir, fs.readFileSync(commonDirFile, 'utf8').trim())
+        : gitDir;
+      return { gitDir: canonicalGitDir(gitDir), commonDir: canonicalGitDir(commonDir) };
     }
     if (path.dirname(dir) === dir) { return undefined; }
   }
+}
+
+/**
+ * The common git directory of the repository containing `folder`: the same for the main
+ * checkout and all its worktrees. Undefined when `folder` is not inside a git repository.
+ */
+export function findGitCommonDir(folder: string): string | undefined {
+  return findGitDirs(folder)?.commonDir;
 }
 
 /**

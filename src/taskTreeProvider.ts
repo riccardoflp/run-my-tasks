@@ -6,6 +6,7 @@ import {
   isMultiRoot,
   entryRefFor,
   GroupScope,
+  groupsKey,
   parseEntryRef,
   refMatches,
   scopeAccepts,
@@ -75,7 +76,7 @@ export interface SharedState {
   // Where groups live: one scope in a single-folder window, one per project and the workspace
   // scope in a multi-root workspace
   scopes: GroupScope[];
-  // The groups of each scope, by scope id
+  // The groups of each scope, by groupsKey: the projects of the worktrees of a repository share them
   readonly groups: Map<string, VirtualGroup[]>;
   // Search text narrowing all the views; empty when not searching
   filter: string;
@@ -105,11 +106,11 @@ export function scopeById(shared: SharedState, id?: string): GroupScope {
 }
 
 export function groupsOf(shared: SharedState, scope: GroupScope = shared.scopes[0]): VirtualGroup[] {
-  return shared.groups.get(scope.id) ?? [];
+  return shared.groups.get(groupsKey(scope)) ?? [];
 }
 
 export function setGroups(shared: SharedState, groups: VirtualGroup[], scope: GroupScope = shared.scopes[0]): void {
-  shared.groups.set(scope.id, groups);
+  shared.groups.set(groupsKey(scope), groups);
 }
 
 export interface PickedGroup { scope: GroupScope; group: VirtualGroup; }
@@ -440,13 +441,16 @@ export class GroupsDragController implements vscode.TreeDragAndDropController<Gr
     activeDrag = null;
     if (!drag) { return; }
 
-    // The groups of the scopes the drop changes, by scope id
-    const changed = new Map<string, VirtualGroup[]>();
+    // The groups the drop changes, by groupsKey: the projects of two worktrees of a repository
+    // share their groups, a move from one to the other changes them once
+    const changed = new Map<string, { scope: GroupScope; groups: VirtualGroup[] }>();
     const scopeOf = (id?: string): GroupScope => scopeById(this.shared, id);
-    const groupsIn = (scope: GroupScope): VirtualGroup[] => changed.get(scope.id) ?? [...groupsOf(this.shared, scope)];
-    const update = (scope: GroupScope, groups: VirtualGroup[]): void => { changed.set(scope.id, groups); };
+    const sameGroups = (a: GroupScope, b: GroupScope): boolean => groupsKey(a) === groupsKey(b);
+    const groupsIn = (scope: GroupScope): VirtualGroup[] =>
+      changed.get(groupsKey(scope))?.groups ?? [...groupsOf(this.shared, scope)];
+    const update = (scope: GroupScope, groups: VirtualGroup[]): void => { changed.set(groupsKey(scope), { scope, groups }); };
     const save = async (): Promise<void> => {
-      for (const [scopeId, groups] of changed) { await this.onDrop(scopeId, groups); }
+      for (const { scope, groups } of changed.values()) { await this.onDrop(scope.id, groups); }
     };
 
     // Case A: group reorder — drag a group header onto another group header of the same project
@@ -455,7 +459,7 @@ export class GroupsDragController implements vscode.TreeDragAndDropController<Gr
       const targetName = target.group.name;
       let groups = groupsIn(scope);
       for (const gi of drag.groups) {
-        if (gi.groupName === targetName || scopeOf(gi.scopeId).id !== scope.id) { continue; }
+        if (gi.groupName === targetName || !sameGroups(scopeOf(gi.scopeId), scope)) { continue; }
         const fromIdx = groups.findIndex(g => g.name === gi.groupName);
         if (fromIdx === -1) { continue; }
         groups = [...groups];
@@ -505,13 +509,15 @@ export class GroupsDragController implements vscode.TreeDragAndDropController<Gr
     const rejected: EntryDragItem[] = [];
     for (const entry of entries) {
       const { kind, name, folder, from } = entry;
-      if (!scopeAccepts(scope, folder)) {
+      const fromScope = from && scopeOf(from.scopeId);
+      // An entry moved between the projects of two worktrees stays in the groups they share
+      const sharedGroups = fromScope !== undefined && sameGroups(fromScope, scope);
+      if (!scopeAccepts(scope, folder) && !sharedGroups) {
         rejected.push(entry);
         continue;
       }
-      const ref = entryRefFor(scope, name, folder);
-      const fromScope = from && scopeOf(from.scopeId);
-      const sameGroup = fromScope?.id === scope.id && from?.groupName === targetGroupName;
+      const ref = sharedGroups ? from!.ref : entryRefFor(scope, name, folder);
+      const sameGroup = sharedGroups && from?.groupName === targetGroupName;
 
       if (sameGroup && targetEntry?.kind === kind && from!.ref !== targetEntry.ref) {
         // Case B: reorder within same group — insert before the target entry of the same kind

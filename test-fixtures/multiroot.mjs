@@ -2,7 +2,8 @@
 // outside this repository, whose git directory the folders would otherwise belong to. Its folders are
 // - api: a git repository with the tasks build and serve, and the launch configuration debug-api
 // - web: another git repository, with the tasks build (named as the one of api) and dev
-// - web-feature: a worktree of web, with the task preview: with web, the project web
+// - web-feature: a worktree of web, with its tasks build and dev and the task preview of its branch: a project
+//   of its own, sharing the groups of web
 // - notes: a folder outside git, with the task todo
 // and shop.code-workspace has the task everything.
 import { execFileSync } from 'child_process';
@@ -31,7 +32,8 @@ export function createMultiRootWorkspace() {
   }
   for (const repo of ['api', 'web']) {
     git(path.join(root, repo), 'init', '--quiet');
-    git(path.join(root, repo), 'commit', '--quiet', '--allow-empty', '-m', 'Fixture');
+    git(path.join(root, repo), 'add', '--all');
+    git(path.join(root, repo), 'commit', '--quiet', '-m', 'Fixture');
   }
   git(path.join(root, 'web'), 'worktree', 'add', '--quiet', path.join(root, 'web-feature'));
   fs.cpSync(path.join(template, 'web-feature'), path.join(root, 'web-feature'), { recursive: true });

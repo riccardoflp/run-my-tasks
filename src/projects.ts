@@ -1,11 +1,12 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { findGitCommonDir } from './gitRepo';
+import { findGitDirs } from './gitRepo';
 
 /**
- * Where groups live. A single-folder window has one scope: the repository (or the folder) it
- * works in. A multi-root workspace has one scope per project (the folders in the same git
- * repository make one project) plus the workspace scope, whose groups may mix the projects.
+ * Where groups live. A single-folder window has one scope: the checkout (or the folder) it
+ * works in. A multi-root workspace has one scope per project (the folders in the same checkout
+ * of a git repository make one project; each worktree is a project of its own) plus the
+ * workspace scope, whose groups may mix the projects.
  */
 export interface GroupScope {
   // Key of the scope among the scopes of the window, also used in the ids of the tree items
@@ -13,7 +14,8 @@ export interface GroupScope {
   readonly label: string;
   // The workspace folders whose tasks and launch configurations the groups of the scope refer to
   readonly folders: readonly vscode.WorkspaceFolder[];
-  // Git common dir of the project: its groups are shared by all the windows on the repository
+  // Git common dir of the project: its groups are shared by all the windows on the repository, and
+  // by the projects of its other worktrees, each running them on its own checkout
   readonly repo?: string;
   // True for the workspace scope of a multi-root workspace: its entries name their folder
   readonly mixed: boolean;
@@ -26,13 +28,24 @@ export function isMultiRoot(): boolean {
   return vscode.workspace.workspaceFile !== undefined || (vscode.workspace.workspaceFolders?.length ?? 0) > 1;
 }
 
-function repoOf(folder: vscode.WorkspaceFolder): string | undefined {
+function gitDirsOf(folder: vscode.WorkspaceFolder): { gitDir: string; commonDir: string } | undefined {
   if (folder.uri.scheme !== 'file') { return undefined; }
   try {
-    return findGitCommonDir(folder.uri.fsPath);
+    return findGitDirs(folder.uri.fsPath);
   } catch {
     return undefined;
   }
+}
+
+// The id of the project of a checkout: the main checkout keeps the id of its repository
+const checkoutScopeId = (gitDir: string): string => `repo:${gitDir}`;
+
+/**
+ * Where the groups of a scope are kept: the projects of the worktrees of one repository share
+ * theirs, the other scopes have their own
+ */
+export function groupsKey(scope: GroupScope): string {
+  return scope.repo ? `repo:${scope.repo}` : scope.id;
 }
 
 export function computeScopes(): GroupScope[] {
@@ -40,22 +53,24 @@ export function computeScopes(): GroupScope[] {
 
   if (!isMultiRoot()) {
     const folder = folders[0];
-    const repo = folder && repoOf(folder);
+    const git = folder && gitDirsOf(folder);
     return [{
-      id: repo ? `repo:${repo}` : WORKSPACE_SCOPE_ID,
+      id: git ? checkoutScopeId(git.gitDir) : WORKSPACE_SCOPE_ID,
       label: folder?.name ?? 'Workspace',
       folders: folder ? [folder] : [],
-      repo,
+      repo: git?.commonDir,
       mixed: false,
     }];
   }
 
-  // Folders of the same repository (e.g. two packages of a monorepo) make one project
+  // Folders of the same checkout (e.g. two packages of a monorepo) make one project. A worktree
+  // has the tasks of its repository under the same names: it makes a project of its own, so that
+  // its groups run its tasks and not those of the main checkout
   const projects = new Map<string, { repo?: string; folders: vscode.WorkspaceFolder[] }>();
   for (const folder of folders) {
-    const repo = repoOf(folder);
-    const id = repo ? `repo:${repo}` : `folder:${folder.uri.toString()}`;
-    const project = projects.get(id) ?? { repo, folders: [] };
+    const git = gitDirsOf(folder);
+    const id = git ? checkoutScopeId(git.gitDir) : `folder:${folder.uri.toString()}`;
+    const project = projects.get(id) ?? { repo: git?.commonDir, folders: [] };
     project.folders.push(folder);
     projects.set(id, project);
   }

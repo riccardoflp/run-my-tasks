@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- In a multi-root workspace a worktree is a project of its own, sharing the groups of its repository: a group shown in the project of the worktree runs, stops and shows the tasks and launch configurations of the worktree. With the repository and its worktree in one project, a group ran those of the main checkout, even with only the worktree selected in Source Control
+- Selecting a repository in Source Control no longer shows the project of its worktrees, and selecting a worktree no longer shows its repository
+
 ## [0.9.0] - 2026-11-24
 
 ### Added

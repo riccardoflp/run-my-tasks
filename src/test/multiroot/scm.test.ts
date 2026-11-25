@@ -2,9 +2,10 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../../extension';
 import { GitApi, GitExtension, GitRepository, ScmSelection } from '../../scmSelection';
-import { GroupsTreeProvider, TasksTreeProvider } from '../../taskTreeProvider';
+import { taskOrigin } from '../../projects';
+import { GroupsTreeProvider, SharedState, TasksTreeProvider, TaskTreeItem } from '../../taskTreeProvider';
 import { fakeInputBox, getApi, restoreStubs, waitFor, withSettings } from '../helpers';
-import { clearGroups, folder, followScmSelection, scope, selectRepository } from './workspace';
+import { clearGroups, folder, followScmSelection, saveGroups, scope, selectRepository } from './workspace';
 
 const labels = (items: vscode.TreeItem[]) => items.map(i => i.label);
 const SCM_MESSAGE = 'Showing the repositories selected in Source Control';
@@ -28,6 +29,18 @@ suite('Source Control selection', () => {
 
   const shownProjects = async () => labels(await new GroupsTreeProvider(api.shared).getChildren());
   const shownOrigins = async () => labels(await new TasksTreeProvider(api.shared).getChildren());
+  // "task@folder" of the entries of the groups of each project shown, by project
+  const shownEntries = async (shared: SharedState = api.shared): Promise<Record<string, string[][]>> => {
+    const provider = new GroupsTreeProvider(shared);
+    const entries: Record<string, string[][]> = {};
+    for (const project of await provider.getChildren()) {
+      const groups = await provider.getChildren(project);
+      if (groups.length === 0) { continue; }
+      entries[String(project.label)] = await Promise.all(groups.map(async group =>
+        (await provider.getChildren(group) as TaskTreeItem[]).map(e => `${e.task.name}@${taskOrigin(e.task).label}`)));
+    }
+    return entries;
+  };
 
   // The real Repositories view, selected one repository at a time (its default selection mode)
   suite('Repositories view', () => {
@@ -42,19 +55,21 @@ suite('Source Control selection', () => {
       assert.strictEqual(api.views.launch.message, undefined);
     });
 
-    test('selecting web shows the project web, its worktree included, and hides api', async () => {
+    test('selecting web shows the project web, not the one of its worktree, and hides api', async () => {
       await selectRepository('web');
       await waitFor(() => !api.shared.visibility.isFolderShown(folder('api')), 'api to be hidden');
-      assert.deepStrictEqual(await shownProjects(), ['web, web-feature', 'notes', 'Workspace']);
-      // The worktree is a repository of its own for git, not selected: its folder is hidden in the Tasks view
+      // The worktree is a repository of its own for git, not selected: its project and folder are hidden
+      assert.deepStrictEqual(await shownProjects(), ['web', 'notes', 'Workspace']);
       assert.deepStrictEqual(await shownOrigins(), ['web', 'notes', 'shop.code-workspace']);
     });
 
-    test('selecting the worktree shows its project', async () => {
+    test('selecting the worktree shows its project, whose groups run its tasks', async () => {
+      await saveGroups(api, scope(api, 'web'), [{ name: 'Build', tasks: ['build'] }]);
       await selectRepository('web-feature');
       await waitFor(() => api.shared.visibility.isFolderShown(folder('web-feature')), 'web-feature to be shown');
-      assert.deepStrictEqual(await shownProjects(), ['web, web-feature', 'notes', 'Workspace']);
+      assert.deepStrictEqual(await shownProjects(), ['web-feature', 'notes', 'Workspace']);
       assert.deepStrictEqual(await shownOrigins(), ['web-feature', 'notes', 'shop.code-workspace']);
+      assert.deepStrictEqual(await shownEntries(), { 'web-feature': [['build@web-feature']] });
     });
 
     test('the views are redrawn when the selection changes', async () => {
@@ -70,7 +85,7 @@ suite('Source Control selection', () => {
       await selectRepository('api');
       await followScmSelection(false);
       await waitFor(() => api.views.groups.message === undefined, 'the message to go away');
-      assert.deepStrictEqual(await shownProjects(), ['api', 'web, web-feature', 'notes', 'Workspace']);
+      assert.deepStrictEqual(await shownProjects(), ['api', 'web', 'web-feature', 'notes', 'Workspace']);
       assert.deepStrictEqual(await shownOrigins(), ['api', 'web', 'web-feature', 'notes', 'shop.code-workspace']);
       assert.strictEqual(api.views.tasks.message, undefined);
 
@@ -160,11 +175,38 @@ suite('Source Control selection', () => {
         ['api', 'web-feature', 'notes'],
       );
       // A project is shown when one of its folders is; the workspace always
-      assert.ok(selection.isScopeShown(scope(api, 'web, web-feature')));
+      assert.ok(selection.isScopeShown(scope(api, 'web-feature')));
+      assert.ok(!selection.isScopeShown(scope(api, 'web')));
       assert.ok(selection.isScopeShown(scope(api, 'Workspace')));
       repos.feature.select(false);
-      assert.ok(!selection.isScopeShown(scope(api, 'web, web-feature')));
+      assert.ok(!selection.isScopeShown(scope(api, 'web-feature')));
       assert.ok(selection.isScopeShown(scope(api, 'notes')));
+    });
+
+    test('with a repository and its worktree selected, each project runs the groups on its own checkout', async () => {
+      await saveGroups(api, scope(api, 'web'), [{ name: 'Build', tasks: ['build', 'preview'] }]);
+      repos.web.select(true);
+      repos.feature.select(true);
+      const shared = { ...api.shared, visibility: selection };
+      assert.deepStrictEqual(labels(await new GroupsTreeProvider(shared).getChildren()), ['web', 'web-feature', 'notes', 'Workspace']);
+      assert.deepStrictEqual(await shownEntries(shared), {
+        web: [['build@web']],
+        'web-feature': [['build@web-feature', 'preview@web-feature']],
+      });
+      assert.deepStrictEqual(labels(await new TasksTreeProvider(shared).getChildren()), ['web', 'web-feature', 'notes', 'shop.code-workspace']);
+    });
+
+    test('with a worktree and another repository selected, the repository of the worktree stays hidden', async () => {
+      await saveGroups(api, scope(api, 'web'), [{ name: 'Build', tasks: ['build'] }]);
+      await saveGroups(api, scope(api, 'api'), [{ name: 'Build', tasks: ['build'] }]);
+      repos.api.select(true);
+      repos.feature.select(true);
+      const shared = { ...api.shared, visibility: selection };
+      assert.deepStrictEqual(await shownEntries(shared), {
+        api: [['build@api']],
+        'web-feature': [['build@web-feature']],
+      });
+      assert.deepStrictEqual(labels(await new TasksTreeProvider(shared).getChildren()), ['api', 'web-feature', 'notes', 'shop.code-workspace']);
     });
 
     test('tells when a repository is selected, opened or closed, or the setting changes', async () => {
