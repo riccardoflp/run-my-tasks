@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-26
+
 ### Added
 
 - **Show in Run My Tasks** on the context menu of the repositories in Source Control: the **Groups** and **Tasks** views of a multi-root workspace show the projects of all the selected rows, repositories and worktrees alike, until a repository outside them is clicked. VS Code tells extensions only the repository clicked last, so the rows added with Ctrl+click were not followed
@@ -139,7 +141,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runMyTasks.statusBarPriority` setting to control the button position within its alignment group
 - `runMyTasks.showTaskType` setting to show/hide task source and type detail lines in the picker
 
-[Unreleased]: https://github.com/riccardoflp/run-my-tasks/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/riccardoflp/run-my-tasks/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/riccardoflp/run-my-tasks/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.7.0...v0.8.0
