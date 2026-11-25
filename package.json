@@ -241,6 +241,11 @@
         "title": "Expand All Tasks",
         "icon": "$(expand-all)",
         "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.showScmRepositories",
+        "title": "Show in Run My Tasks",
+        "category": "Run My Tasks"
       }
     ],
     "keybindings": [
@@ -285,6 +290,17 @@
         {
           "command": "run-my-tasks.clearSearch",
           "when": "runMyTasks.filterActive"
+        },
+        {
+          "command": "run-my-tasks.showScmRepositories",
+          "when": "false"
+        }
+      ],
+      "scm/sourceControl": [
+        {
+          "command": "run-my-tasks.showScmRepositories",
+          "when": "scmProvider == git && workbenchState == workspace && config.runMyTasks.followScmSelection",
+          "group": "runMyTasks@1"
         }
       ],
       "view/title": [
@@ -487,7 +503,7 @@
         "runMyTasks.followScmSelection": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "In a multi-root workspace, show in the **Groups** and **Tasks** views only the projects whose git repository is selected in the **Repositories** view of Source Control. Projects outside a git repository and the groups of the **Workspace** are always shown, and so is everything when no repository is selected."
+          "markdownDescription": "In a multi-root workspace, show in the **Groups** and **Tasks** views only the project of the git repository or worktree clicked in the **Repositories** view of Source Control, or those of the rows picked with **Show in Run My Tasks** on their context menu. Projects outside a git repository and the groups of the **Workspace** are always shown, and so is everything when no repository is selected."
         },
         "runMyTasks.showTaskType": {
           "type": "boolean",

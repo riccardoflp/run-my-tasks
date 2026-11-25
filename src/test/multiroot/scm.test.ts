@@ -5,7 +5,7 @@ import { GitApi, GitExtension, GitRepository, ScmSelection } from '../../scmSele
 import { taskOrigin } from '../../projects';
 import { GroupsTreeProvider, SharedState, TasksTreeProvider, TaskTreeItem } from '../../taskTreeProvider';
 import { fakeInputBox, getApi, restoreStubs, waitFor, withSettings } from '../helpers';
-import { clearGroups, folder, followScmSelection, saveGroups, scope, selectRepository } from './workspace';
+import { clearGroups, folder, followScmSelection, gitApi, saveGroups, scope, selectRepository } from './workspace';
 
 const labels = (items: vscode.TreeItem[]) => items.map(i => i.label);
 const SCM_MESSAGE = 'Showing the repositories selected in Source Control';
@@ -24,6 +24,8 @@ suite('Source Control selection', () => {
 
   teardown(async () => {
     restoreStubs();
+    // Back to following the active repository
+    await vscode.commands.executeCommand('run-my-tasks.showScmRepositories');
     await followScmSelection(undefined);
   });
 
@@ -111,10 +113,26 @@ suite('Source Control selection', () => {
       }
       assert.strictEqual(api.views.groups.message, SCM_MESSAGE);
     });
+
+    test('Show in Run My Tasks shows the repositories of the rows it is given, until another one is clicked', async () => {
+      await saveGroups(api, scope(api, 'web'), [{ name: 'Build', tasks: ['build'] }]);
+      await selectRepository('web');
+      const git = await gitApi();
+      // What the context menu of the rows hands: the source control of the row clicked, then those of the other selected rows
+      const row = (name: string) => ({ rootUri: git.getRepository(folder(name).uri)!.rootUri, label: 'Git' });
+      await vscode.commands.executeCommand('run-my-tasks.showScmRepositories', row('web-feature'), row('web'));
+      assert.deepStrictEqual(await shownProjects(), ['web', 'web-feature', 'notes', 'Workspace']);
+      assert.deepStrictEqual(await shownEntries(), { web: [['build@web']], 'web-feature': [['build@web-feature']] });
+      assert.deepStrictEqual(await shownOrigins(), ['web', 'web-feature', 'notes', 'shop.code-workspace']);
+      assert.strictEqual(api.views.groups.message, SCM_MESSAGE);
+
+      await selectRepository('api');
+      await waitFor(async () => (await shownProjects()).join() === 'api,notes,Workspace', 'the views to follow api');
+    });
   });
 
-  // A fake git extension, for what the Repositories view cannot do from the tests: select several
-  // repositories, none, or have git missing
+  // A fake git extension, for what the Repositories view cannot do from the tests: mark several
+  // repositories active (VS Code marks one at a time), none, or have git missing
   suite('With any selection', () => {
     interface FakeRepo extends GitRepository { select(selected: boolean): void; }
 
@@ -234,6 +252,56 @@ suite('Source Control selection', () => {
       repos.api.select(true);
       withSettings({ followScmSelection: false });
       assert.ok(selection.isFolderShown(folder('web')));
+    });
+
+    const shown = () => ['api', 'web', 'web-feature', 'notes'].filter(name => selection.isFolderShown(folder(name)));
+
+    test('the repositories chosen with Show in Run My Tasks are shown until another one becomes active', () => {
+      let changes = 0;
+      selection.onDidChange(() => changes++);
+      repos.web.select(true);
+      selection.choose([repos.web.rootUri, repos.feature.rootUri]);
+      assert.strictEqual(changes, 2);
+      assert.deepStrictEqual(shown(), ['web', 'web-feature', 'notes']);
+      assert.ok(selection.isScopeShown(scope(api, 'web')));
+      assert.ok(selection.isScopeShown(scope(api, 'web-feature')));
+      assert.ok(!selection.isScopeShown(scope(api, 'api')));
+
+      // The active repository moving among them keeps them
+      repos.web.select(false);
+      repos.feature.select(true);
+      assert.deepStrictEqual(shown(), ['web', 'web-feature', 'notes']);
+
+      // Another one: the views follow it again
+      repos.feature.select(false);
+      repos.api.select(true);
+      assert.deepStrictEqual(shown(), ['api', 'notes']);
+    });
+
+    test('a chosen repository closed is no longer shown; with none left, the active one is', async () => {
+      const git = fakeGit(Object.values(repos));
+      selection.dispose();
+      selection = await connect(git);
+      repos.api.select(true);
+      selection.choose([repos.web.rootUri, repos.feature.rootUri]);
+      git.closed.fire(repos.feature);
+      assert.deepStrictEqual(shown(), ['web', 'notes']);
+      git.closed.fire(repos.web);
+      assert.deepStrictEqual(shown(), ['api', 'notes']);
+    });
+
+    test('choosing no repository follows the active one again', () => {
+      repos.api.select(true);
+      selection.choose([repos.web.rootUri]);
+      assert.deepStrictEqual(shown(), ['web', 'notes']);
+      selection.choose([]);
+      assert.deepStrictEqual(shown(), ['api', 'notes']);
+    });
+
+    test('with the setting off the chosen repositories are ignored', () => {
+      selection.choose([repos.web.rootUri]);
+      withSettings({ followScmSelection: false });
+      assert.deepStrictEqual(shown(), ['api', 'web', 'web-feature', 'notes']);
     });
 
     test('with git disabled or missing every folder is shown', async () => {

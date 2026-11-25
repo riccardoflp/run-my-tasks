@@ -101,7 +101,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const shared = createSharedState();
   const scmSelection = new ScmSelection();
   shared.visibility = scmSelection;
-  context.subscriptions.push(scmSelection);
+  context.subscriptions.push(
+    scmSelection,
+    // On the context menu of the repositories in Source Control: VS Code hands the row clicked, then
+    // the other selected ones
+    vscode.commands.registerCommand('run-my-tasks.showScmRepositories', (...repositories: unknown[]) => {
+      const roots = repositories
+        .map(r => (r as { rootUri?: unknown } | undefined)?.rootUri)
+        .filter((uri): uri is vscode.Uri => uri instanceof vscode.Uri);
+      scmSelection.choose(roots);
+    }),
+  );
 
   const groupsProvider = new GroupsTreeProvider(shared);
   const tasksProvider = new TasksTreeProvider(shared);

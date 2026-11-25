@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Show in Run My Tasks** on the context menu of the repositories in Source Control: the **Groups** and **Tasks** views of a multi-root workspace show the projects of all the selected rows, repositories and worktrees alike, until a repository outside them is clicked. VS Code tells extensions only the repository clicked last, so the rows added with Ctrl+click were not followed
+
 ### Fixed
 
 - In a multi-root workspace a worktree is a project of its own, sharing the groups of its repository: a group shown in the project of the worktree runs, stops and shows the tasks and launch configurations of the worktree. With the repository and its worktree in one project, a group ran those of the main checkout, even with only the worktree selected in Source Control
