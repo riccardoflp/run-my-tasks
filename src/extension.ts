@@ -20,6 +20,7 @@ import {
   taskOrigin,
   workspaceFileLabel,
 } from './projects';
+import { chooseProjects, ProjectChoice } from './projectChoice';
 import { ScmSelection } from './scmSelection';
 import { createStatusBarItem } from './statusBar';
 import { runningTaskKeys, taskKey, terminateTask, trackTaskStarts } from './taskIdentity';
@@ -46,6 +47,7 @@ import {
   LaunchDragController,
   LaunchTreeItem,
   LaunchTreeProvider,
+  RunningTreeProvider,
   setGroups,
   showsProjects,
   TasksDragController,
@@ -85,8 +87,15 @@ export interface ExtensionApi {
   saveGroups(groups: VirtualGroup[], scope?: GroupScope): Promise<void>;
   // The groups of the scope as saved, which other windows may have changed
   loadGroups(scope: GroupScope): VirtualGroup[];
-  // The Groups, Tasks and Launch Configurations views, whose messages the tests read
-  readonly views: { readonly groups: vscode.TreeView<unknown>; readonly tasks: vscode.TreeView<unknown>; readonly launch: vscode.TreeView<unknown> };
+  // The projects the Groups and Tasks views show
+  readonly projects: ProjectChoice;
+  // The views, whose messages, descriptions and badges the tests read
+  readonly views: {
+    readonly running: vscode.TreeView<unknown>;
+    readonly groups: vscode.TreeView<unknown>;
+    readonly tasks: vscode.TreeView<unknown>;
+    readonly launch: vscode.TreeView<unknown>;
+  };
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -100,22 +109,27 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Side panel tree views
   const shared = createSharedState();
   const scmSelection = new ScmSelection();
-  shared.visibility = scmSelection;
+  const projects = new ProjectChoice(context.workspaceState, scmSelection, () => shared.scopes);
+  shared.visibility = projects;
   context.subscriptions.push(
     scmSelection,
+    projects,
     // On the context menu of the repositories in Source Control: VS Code hands the row clicked, then
-    // the other selected ones
+    // the other selected ones. Given none, the views follow Source Control again
     vscode.commands.registerCommand('run-my-tasks.showScmRepositories', (...repositories: unknown[]) => {
       const roots = repositories
         .map(r => (r as { rootUri?: unknown } | undefined)?.rootUri)
         .filter((uri): uri is vscode.Uri => uri instanceof vscode.Uri);
-      scmSelection.choose(roots);
+      return projects.chooseRepositories(roots);
     }),
+    // Filter button in the title of the Groups and Tasks views of a multi-root workspace
+    vscode.commands.registerCommand('run-my-tasks.chooseProjects', () => chooseProjects(projects, shared.scopes)),
   );
 
   const groupsProvider = new GroupsTreeProvider(shared);
   const tasksProvider = new TasksTreeProvider(shared);
   const launchProvider = new LaunchTreeProvider(shared);
+  const runningProvider = new RunningTreeProvider(shared);
 
   const groupStorage = createGroupStorage(context);
   void migrateLegacyGroups(context, groupStorage, shared.scopes);
@@ -133,6 +147,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   };
 
   const views: vscode.TreeView<unknown>[] = [
+    vscode.window.createTreeView('run-my-tasks.runningView', {
+      treeDataProvider: runningProvider,
+      showCollapseAll: false,
+    }),
     vscode.window.createTreeView('run-my-tasks.groupsView', {
       treeDataProvider: groupsProvider,
       showCollapseAll: false,
@@ -150,11 +168,21 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       dragAndDropController: new LaunchDragController(),
     }),
   ];
-  const [groupsView, tasksView, launchView] = views;
+  const [runningView, groupsView, tasksView, launchView] = views;
   context.subscriptions.push(...views);
+
+  // The Running view, its badge (shown on the icon of Run My Tasks in the activity bar too) and
+  // whether Stop All is offered
+  const refreshRunning = (): void => {
+    runningProvider.refresh();
+    const count = runningProvider.count();
+    runningView.badge = count > 0 ? { value: count, tooltip: `${count} running` } : undefined;
+    void vscode.commands.executeCommand('setContext', 'runMyTasks.anyRunning', count > 0);
+  };
 
   // Redraws the views with the cached tasks: their running state changed, not the tasks themselves
   const refreshViews = (): void => {
+    refreshRunning();
     groupsProvider.refresh();
     tasksProvider.refresh();
     launchProvider.refresh();
@@ -167,20 +195,27 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   };
 
   const refreshLaunches = (): void => {
+    refreshRunning();
     groupsProvider.refresh();
     launchProvider.refresh();
   };
 
-  // The messages on top of the views: the search, and in the Groups and Tasks views whether
-  // projects are hidden because their repository is not selected in Source Control
+  // The messages on top of the views: the search, and in the Groups and Tasks views why projects
+  // are hidden, chosen or not selected in Source Control. Next to the title of those two, the
+  // projects they show
   const updateViewMessages = (): void => {
     const search = shared.filter ? `Search results for "${shared.filter}"` : undefined;
     const hiding = showsProjects(shared)
       && shared.scopes.some(scope => !shared.visibility.isScopeShown(scope));
-    const scm = hiding ? 'Showing the repositories selected in Source Control' : undefined;
+    const why = !hiding ? undefined
+      : projects.mode === 'chosen' ? 'Showing the chosen projects' : 'Showing the repositories selected in Source Control';
+    const shown = hiding
+      ? shared.scopes.filter(s => !s.mixed && shared.visibility.isScopeShown(s)).map(s => s.label).join(', ') || undefined
+      : undefined;
     for (const view of views) {
-      const followsScm = view === groupsView || view === tasksView;
-      view.message = [search, followsScm ? scm : undefined].filter(Boolean).join(' · ') || undefined;
+      const byProject = view === groupsView || view === tasksView;
+      view.message = [search, byProject ? why : undefined].filter(Boolean).join(' · ') || undefined;
+      if (byProject) { view.description = shown; }
     }
   };
 
@@ -189,6 +224,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     shared.filter = filter;
     updateViewMessages();
     vscode.commands.executeCommand('setContext', 'runMyTasks.filterActive', filter !== '');
+    runningProvider.refresh();
     groupsProvider.refresh();
     tasksProvider.refresh();
     launchProvider.refresh();
@@ -197,6 +233,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Shows the task idle right away, before it ends
   const markStopped = (task: vscode.Task): void => {
     shared.pendingStop.add(taskKey(task));
+    refreshRunning();
     groupsProvider.refresh();
     tasksProvider.refresh();
   };
@@ -209,6 +246,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   };
   reloadGroups();
   updateViewMessages();
+  refreshRunning();
   context.subscriptions.push(
     vscode.window.onDidChangeWindowState(state => {
       if (state.focused) { reloadGroups(); }
@@ -221,8 +259,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       updateViewMessages();
       refreshAll();
     }),
-    // A repository selected or unselected in Source Control
-    scmSelection.onDidChange(() => {
+    // Projects chosen, or a repository selected or unselected in Source Control
+    projects.onDidChange(() => {
       updateViewMessages();
       groupsProvider.refresh();
       tasksProvider.refresh();
@@ -336,6 +374,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         markStopped(execution.task);
         terminateTask(execution);
       }
+    }),
+  );
+
+  // Stop All in the title of the Running view: every task and debug session
+  context.subscriptions.push(
+    vscode.commands.registerCommand('run-my-tasks.stopAll', async () => {
+      for (const execution of vscode.tasks.taskExecutions) {
+        markStopped(execution.task);
+        terminateTask(execution);
+      }
+      // Every debug session, the child ones with their parent
+      await vscode.debug.stopDebugging();
     }),
   );
 
@@ -772,7 +822,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   );
 
-  return { shared, saveGroups, loadGroups: scope => groupStorage.load(scope), views: { groups: groupsView, tasks: tasksView, launch: launchView } };
+  return {
+    shared,
+    saveGroups,
+    loadGroups: scope => groupStorage.load(scope),
+    projects,
+    views: { running: runningView, groups: groupsView, tasks: tasksView, launch: launchView },
+  };
 }
 
 export function deactivate(): void {}

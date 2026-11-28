@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Running** view, on top of the side panel: the tasks running, whoever started them, and the launch configurations being debugged, of every project, with their **Stop** buttons and **Stop All**. Its badge counts them, on the Run My Tasks icon of the Activity Bar too
+- **Choose Projects...**, the filter button of the **Groups** and **Tasks** views of a multi-root workspace: tick the repositories, worktrees and folders to show. The views keep them, also when the workspace is opened again, until another choice, and name them next to their title
+
+### Changed
+
+- **Show in Run My Tasks** chooses the projects of the rows selected in Source Control, as **Choose Projects...** does: they stay shown when another repository is clicked there, and the folders outside git are no longer shown with them. It also works with `runMyTasks.followScmSelection` off
+
 ## [0.10.0] - 2026-11-26
 
 ### Added

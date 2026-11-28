@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getLaunchConfigs, isLaunchRunning, LaunchConfig, runningLaunchNames } from './launchConfigs';
+import { getLaunchConfigs, isLaunchRunning, LaunchConfig, runningLaunches, runningLaunchNames } from './launchConfigs';
 import {
   compareOrigins,
   computeScopes,
@@ -59,7 +59,7 @@ export function groupLaunches(group: VirtualGroup, configs: readonly LaunchConfi
     .filter((c): c is LaunchConfig => c !== undefined);
 }
 
-// Which projects the views show; the Repositories view of Source Control drives it (ScmSelection)
+// Which projects the views show: those chosen, or the repositories selected in Source Control (ProjectChoice)
 export interface ProjectVisibility {
   isFolderShown(folder: vscode.WorkspaceFolder): boolean;
   isScopeShown(scope: GroupScope): boolean;
@@ -758,5 +758,62 @@ export class LaunchTreeProvider implements vscode.TreeDataProvider<LaunchTreeIte
     return getLaunchConfigs()
       .filter(c => matchesFilter(this.shared.filter, c.name, ...(showsProjects(this.shared) ? [c.folder?.name ?? ''] : [])))
       .map(c => new LaunchTreeItem(c, isLaunchRunning(c, running)));
+  }
+}
+
+type RunningNode = TaskTreeItem | LaunchTreeItem;
+
+/**
+ * The Running view: the tasks running, whoever started them, then the launch configurations
+ * being debugged, in the order they started. It shows those of every project, chosen or not
+ */
+export class RunningTreeProvider implements vscode.TreeDataProvider<RunningNode> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<RunningNode | undefined | null | void>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  constructor(private readonly shared: SharedState) {}
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire();
+  }
+
+  getTreeItem(element: RunningNode): vscode.TreeItem {
+    return element;
+  }
+
+  // The running tasks, but those being stopped, each once
+  runningTasks(): vscode.Task[] {
+    const seen = new Set<string>();
+    return vscode.tasks.taskExecutions.map(e => e.task).filter(task => {
+      const key = taskKey(task);
+      if (seen.has(key) || this.shared.pendingStop.has(key)) { return false; }
+      seen.add(key);
+      return true;
+    });
+  }
+
+  // How many tasks and launch configurations are running, search or not
+  count(): number {
+    return this.runningTasks().length + runningLaunches().length;
+  }
+
+  getChildren(element?: RunningNode): RunningNode[] {
+    if (element) { return []; }
+    const multiRoot = showsProjects(this.shared);
+    const filter = this.shared.filter;
+
+    const taskItems = this.runningTasks()
+      .filter(t => matchesFilter(filter, ...(multiRoot ? [taskOrigin(t).label] : []), t.source, t.name))
+      .map(t => {
+        const item = new TaskTreeItem(t, true);
+        // Where it comes from: its folder, and its source but for tasks.json
+        item.description = [multiRoot && taskOrigin(t).label, t.source !== 'Workspace' && t.source]
+          .filter(Boolean).join(' · ') || undefined;
+        return item;
+      });
+    const launchItems = runningLaunches()
+      .filter(c => matchesFilter(filter, c.name, ...(multiRoot ? [c.folder?.name ?? workspaceFileLabel()] : [])))
+      .map(c => new LaunchTreeItem(c, true));
+    return [...taskItems, ...launchItems];
   }
 }

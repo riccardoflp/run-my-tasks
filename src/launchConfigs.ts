@@ -85,6 +85,25 @@ export function runningLaunchNames(): Set<string> {
   return new Set(rootSessions().map(s => s.configuration.name));
 }
 
+/**
+ * The launch configurations of the debug sessions running, in the order they started: each
+ * root session once, as the configuration of launch.json it was started from, else as a
+ * configuration of its own (a session started by another extension, say)
+ */
+export function runningLaunches(): LaunchConfig[] {
+  const configs = getLaunchConfigs().filter(c => !c.compound);
+  const sameFolder = (a?: vscode.WorkspaceFolder, b?: vscode.WorkspaceFolder): boolean => a?.uri.toString() === b?.uri.toString();
+  const found: LaunchConfig[] = [];
+  for (const session of rootSessions()) {
+    const { name } = session.configuration;
+    const folder = session.workspaceFolder;
+    if (found.some(c => c.name === name && sameFolder(c.folder, folder))) { continue; }
+    found.push(configs.find(c => c.name === name && sameFolder(c.folder, folder))
+      ?? { name, folder, type: session.type, request: session.configuration.request });
+  }
+  return found;
+}
+
 // A compound has no session of its own: it is running while all its configurations are
 export function isLaunchRunning(config: LaunchConfig, running: Set<string>): boolean {
   if (!config.compound) { return running.has(config.name); }

@@ -25,17 +25,15 @@ export const FOLLOW_SCM_SETTING = 'followScmSelection';
 /**
  * The repositories selected in the Repositories view of Source Control. In a multi-root
  * workspace the Groups and Tasks views show only the projects of the selected repositories,
- * unless runMyTasks.followScmSelection is off.
+ * unless runMyTasks.followScmSelection is off or projects are chosen (see ProjectChoice).
  *
  * VS Code tells the extensions only the active repository (ui.selected): the one clicked last,
  * not the rows added with Ctrl+click. Show in Run My Tasks, on the context menu of the rows,
- * gets all the selected ones: they are shown until another repository becomes the active one.
+ * gets all the selected ones and chooses their projects.
  */
 export class ScmSelection implements vscode.Disposable {
   private api: GitApi | undefined;
   private readonly repoListeners = new Map<GitRepository, vscode.Disposable>();
-  // Root URIs of the repositories chosen with Show in Run My Tasks; undefined: the active one is shown
-  private chosen: Set<string> | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changed.event;
@@ -75,8 +73,6 @@ export class ScmSelection implements vscode.Disposable {
       api.onDidCloseRepository(r => {
         this.repoListeners.get(r)?.dispose();
         this.repoListeners.delete(r);
-        this.chosen?.delete(r.rootUri.toString());
-        if (this.chosen?.size === 0) { this.chosen = undefined; }
         this.changed.fire();
       }),
     );
@@ -85,23 +81,20 @@ export class ScmSelection implements vscode.Disposable {
 
   private watch(repo: GitRepository): void {
     if (this.repoListeners.has(repo)) { return; }
-    this.repoListeners.set(repo, repo.ui.onDidChange(() => {
-      // A click on a repository outside those chosen: the views follow the active one again
-      if (repo.ui.selected && this.chosen && !this.chosen.has(repo.rootUri.toString())) { this.chosen = undefined; }
-      this.changed.fire();
-    }));
+    this.repoListeners.set(repo, repo.ui.onDidChange(() => this.changed.fire()));
   }
 
-  /**
-   * Shows the projects of these repositories, the rows selected in Source Control the context
-   * menu hands to Show in Run My Tasks
-   */
-  choose(roots: readonly vscode.Uri[]): void {
-    this.chosen = roots.length > 0 ? new Set(roots.map(uri => uri.toString())) : undefined;
-    this.changed.fire();
+  // Whether git is there to follow
+  get available(): boolean {
+    return this.api !== undefined;
   }
 
-  private get following(): boolean {
+  // The root of the repository (or worktree) git knows the folder in
+  repositoryRoot(folder: vscode.WorkspaceFolder): string | undefined {
+    return this.api?.getRepository(folder.uri)?.rootUri.toString();
+  }
+
+  get following(): boolean {
     return vscode.workspace.getConfiguration('runMyTasks').get<boolean>(FOLLOW_SCM_SETTING, true);
   }
 
@@ -114,7 +107,6 @@ export class ScmSelection implements vscode.Disposable {
     if (!api || !this.following) { return true; }
     const repo = api.getRepository(folder.uri);
     if (!repo) { return true; }
-    if (this.chosen) { return this.chosen.has(repo.rootUri.toString()); }
     return repo.ui.selected || !api.repositories.some(r => r.ui.selected);
   }
 

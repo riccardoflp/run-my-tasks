@@ -40,6 +40,10 @@
     "views": {
       "run-my-tasks-container": [
         {
+          "id": "run-my-tasks.runningView",
+          "name": "Running"
+        },
+        {
           "id": "run-my-tasks.groupsView",
           "name": "Groups"
         },
@@ -54,6 +58,11 @@
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "run-my-tasks.runningView",
+        "contents": "No tasks or launch configurations running.",
+        "when": "!runMyTasks.filterActive"
+      },
       {
         "view": "run-my-tasks.launchView",
         "contents": "No launch configurations found.\n[Open launch.json](command:workbench.action.debug.configure)",
@@ -246,6 +255,18 @@
         "command": "run-my-tasks.showScmRepositories",
         "title": "Show in Run My Tasks",
         "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.chooseProjects",
+        "title": "Choose Projects...",
+        "icon": "$(filter)",
+        "category": "Run My Tasks"
+      },
+      {
+        "command": "run-my-tasks.stopAll",
+        "title": "Stop All",
+        "icon": "$(debug-stop)",
+        "category": "Run My Tasks"
       }
     ],
     "keybindings": [
@@ -294,25 +315,43 @@
         {
           "command": "run-my-tasks.showScmRepositories",
           "when": "false"
+        },
+        {
+          "command": "run-my-tasks.chooseProjects",
+          "when": "workbenchState == workspace"
+        },
+        {
+          "command": "run-my-tasks.stopAll",
+          "when": "runMyTasks.anyRunning"
         }
       ],
       "scm/sourceControl": [
         {
           "command": "run-my-tasks.showScmRepositories",
-          "when": "scmProvider == git && workbenchState == workspace && config.runMyTasks.followScmSelection",
+          "when": "scmProvider == git && workbenchState == workspace",
           "group": "runMyTasks@1"
         }
       ],
       "view/title": [
         {
           "command": "run-my-tasks.search",
-          "when": "view == run-my-tasks.groupsView || view == run-my-tasks.tasksView || view == run-my-tasks.launchView",
+          "when": "view == run-my-tasks.runningView || view == run-my-tasks.groupsView || view == run-my-tasks.tasksView || view == run-my-tasks.launchView",
           "group": "navigation@1"
         },
         {
           "command": "run-my-tasks.clearSearch",
-          "when": "(view == run-my-tasks.groupsView || view == run-my-tasks.tasksView || view == run-my-tasks.launchView) && runMyTasks.filterActive",
+          "when": "(view == run-my-tasks.runningView || view == run-my-tasks.groupsView || view == run-my-tasks.tasksView || view == run-my-tasks.launchView) && runMyTasks.filterActive",
           "group": "navigation@2"
+        },
+        {
+          "command": "run-my-tasks.chooseProjects",
+          "when": "(view == run-my-tasks.groupsView || view == run-my-tasks.tasksView) && workbenchState == workspace",
+          "group": "navigation@3"
+        },
+        {
+          "command": "run-my-tasks.stopAll",
+          "when": "view == run-my-tasks.runningView && runMyTasks.anyRunning",
+          "group": "navigation@3"
         },
         {
           "command": "run-my-tasks.createGroup",
@@ -373,6 +412,11 @@
         },
         {
           "command": "run-my-tasks.stopTaskFromTree",
+          "when": "view == run-my-tasks.runningView && viewItem == runningTask",
+          "group": "inline"
+        },
+        {
+          "command": "run-my-tasks.stopTaskFromTree",
           "when": "view == run-my-tasks.tasksView && viewItem == runningTask",
           "group": "inline"
         },
@@ -389,6 +433,11 @@
         {
           "command": "run-my-tasks.debugLaunchFromTree",
           "when": "view == run-my-tasks.launchView && viewItem == idleLaunch",
+          "group": "inline"
+        },
+        {
+          "command": "run-my-tasks.stopLaunchFromTree",
+          "when": "view == run-my-tasks.runningView && viewItem == runningLaunch",
           "group": "inline"
         },
         {
@@ -503,7 +552,7 @@
         "runMyTasks.followScmSelection": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "In a multi-root workspace, show in the **Groups** and **Tasks** views only the project of the git repository or worktree clicked in the **Repositories** view of Source Control, or those of the rows picked with **Show in Run My Tasks** on their context menu. Projects outside a git repository and the groups of the **Workspace** are always shown, and so is everything when no repository is selected."
+          "markdownDescription": "In a multi-root workspace, show in the **Groups** and **Tasks** views only the project of the git repository or worktree clicked in the **Repositories** view of Source Control, until projects are chosen with **Choose Projects...** (the filter button of the views) or **Show in Run My Tasks** on the context menu of the repositories. Projects outside a git repository and the groups of the **Workspace** are always shown, and so is everything when no repository is selected."
         },
         "runMyTasks.showTaskType": {
           "type": "boolean",

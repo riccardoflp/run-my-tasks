@@ -1,14 +1,26 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../../extension';
+import { CHOSEN_PROJECTS_KEY, FOLLOW_SCM_TOOLTIP, ProjectChoice } from '../../projectChoice';
 import { GitApi, GitExtension, GitRepository, ScmSelection } from '../../scmSelection';
 import { taskOrigin } from '../../projects';
-import { GroupsTreeProvider, SharedState, TasksTreeProvider, TaskTreeItem } from '../../taskTreeProvider';
-import { fakeInputBox, getApi, restoreStubs, waitFor, withSettings } from '../helpers';
+import { GroupsTreeProvider, RunningTreeProvider, SharedState, TasksTreeProvider, TaskTreeItem } from '../../taskTreeProvider';
+import {
+  disposeAllTerminals,
+  fakeInputBox,
+  fakeQuickPick,
+  getApi,
+  memoryMemento,
+  restoreStubs,
+  stopAllTasks,
+  waitFor,
+  withSettings,
+} from '../helpers';
 import { clearGroups, folder, followScmSelection, gitApi, saveGroups, scope, selectRepository } from './workspace';
 
 const labels = (items: vscode.TreeItem[]) => items.map(i => i.label);
 const SCM_MESSAGE = 'Showing the repositories selected in Source Control';
+const CHOSEN_MESSAGE = 'Showing the chosen projects';
 
 suite('Source Control selection', () => {
   let api: ExtensionApi;
@@ -25,7 +37,7 @@ suite('Source Control selection', () => {
   teardown(async () => {
     restoreStubs();
     // Back to following the active repository
-    await vscode.commands.executeCommand('run-my-tasks.showScmRepositories');
+    await api.projects.choose(undefined);
     await followScmSelection(undefined);
   });
 
@@ -53,8 +65,12 @@ suite('Source Control selection', () => {
       assert.deepStrictEqual(await shownOrigins(), ['api', 'notes', 'shop.code-workspace']);
       assert.strictEqual(api.views.groups.message, SCM_MESSAGE);
       assert.strictEqual(api.views.tasks.message, SCM_MESSAGE);
-      // The launch configurations are not filtered
+      // Next to the title, the projects shown
+      assert.strictEqual(api.views.groups.description, 'api, notes');
+      assert.strictEqual(api.views.tasks.description, 'api, notes');
+      // The launch configurations and those running are not filtered
       assert.strictEqual(api.views.launch.message, undefined);
+      assert.strictEqual(api.views.running.message, undefined);
     });
 
     test('selecting web shows the project web, not the one of its worktree, and hides api', async () => {
@@ -77,7 +93,7 @@ suite('Source Control selection', () => {
     test('the views are redrawn when the selection changes', async () => {
       await selectRepository('api');
       const changed = new Promise<void>(resolve => {
-        const listener = (api.shared.visibility as ScmSelection).onDidChange(() => { listener.dispose(); resolve(); });
+        const listener = api.projects.onDidChange(() => { listener.dispose(); resolve(); });
       });
       await selectRepository('web');
       await changed;
@@ -87,6 +103,7 @@ suite('Source Control selection', () => {
       await selectRepository('api');
       await followScmSelection(false);
       await waitFor(() => api.views.groups.message === undefined, 'the message to go away');
+      assert.strictEqual(api.views.groups.description, undefined);
       assert.deepStrictEqual(await shownProjects(), ['api', 'web', 'web-feature', 'notes', 'Workspace']);
       assert.deepStrictEqual(await shownOrigins(), ['api', 'web', 'web-feature', 'notes', 'shop.code-workspace']);
       assert.strictEqual(api.views.tasks.message, undefined);
@@ -114,20 +131,115 @@ suite('Source Control selection', () => {
       assert.strictEqual(api.views.groups.message, SCM_MESSAGE);
     });
 
-    test('Show in Run My Tasks shows the repositories of the rows it is given, until another one is clicked', async () => {
+    test('Show in Run My Tasks chooses the projects of the rows it is given, which stay shown when another one is clicked', async () => {
       await saveGroups(api, scope(api, 'web'), [{ name: 'Build', tasks: ['build'] }]);
       await selectRepository('web');
       const git = await gitApi();
       // What the context menu of the rows hands: the source control of the row clicked, then those of the other selected rows
       const row = (name: string) => ({ rootUri: git.getRepository(folder(name).uri)!.rootUri, label: 'Git' });
       await vscode.commands.executeCommand('run-my-tasks.showScmRepositories', row('web-feature'), row('web'));
-      assert.deepStrictEqual(await shownProjects(), ['web', 'web-feature', 'notes', 'Workspace']);
+      assert.deepStrictEqual(await shownProjects(), ['web', 'web-feature', 'Workspace']);
       assert.deepStrictEqual(await shownEntries(), { web: [['build@web']], 'web-feature': [['build@web-feature']] });
-      assert.deepStrictEqual(await shownOrigins(), ['web', 'web-feature', 'notes', 'shop.code-workspace']);
-      assert.strictEqual(api.views.groups.message, SCM_MESSAGE);
+      assert.deepStrictEqual(await shownOrigins(), ['web', 'web-feature', 'shop.code-workspace']);
+      assert.strictEqual(api.views.groups.message, CHOSEN_MESSAGE);
+      assert.strictEqual(api.views.groups.description, 'web, web-feature');
 
       await selectRepository('api');
-      await waitFor(async () => (await shownProjects()).join() === 'api,notes,Workspace', 'the views to follow api');
+      // The selection reaching the extension would redraw the views: they keep the chosen projects
+      await new Promise(r => setTimeout(r, 300));
+      assert.deepStrictEqual(await shownProjects(), ['web', 'web-feature', 'Workspace']);
+
+      // Given no row, it follows Source Control again
+      await vscode.commands.executeCommand('run-my-tasks.showScmRepositories');
+      assert.deepStrictEqual(await shownProjects(), ['api', 'notes', 'Workspace']);
+      assert.strictEqual(api.views.groups.message, SCM_MESSAGE);
+    });
+
+    test('the Running view shows the tasks of every project, chosen or not, with their folder', async () => {
+      await api.projects.choose([scope(api, 'api').id]);
+      const tasks = await vscode.tasks.fetchTasks();
+      const of = (name: string, folderName: string) =>
+        tasks.find(t => t.name === name && typeof t.scope === 'object' && t.scope.name === folderName)!;
+      try {
+        await vscode.tasks.executeTask(of('build', 'api'));
+        await vscode.tasks.executeTask(of('preview', 'web-feature'));
+        await waitFor(() => vscode.tasks.taskExecutions.length === 2, 'the tasks to start');
+        const items = new RunningTreeProvider(api.shared).getChildren();
+        assert.deepStrictEqual(items.map(i => `${i.label} · ${i.description}`).sort(), ['build · api', 'preview · web-feature']);
+      } finally {
+        await stopAllTasks();
+        await disposeAllTerminals();
+      }
+    });
+
+    test('Choose Projects shows the projects ticked, whatever is selected in Source Control', async () => {
+      await selectRepository('api');
+      const quickPick = fakeQuickPick<vscode.QuickPickItem>();
+      const done = vscode.commands.executeCommand('run-my-tasks.chooseProjects');
+      const { picker, accept } = await quickPick.shown();
+      assert.deepStrictEqual(picker.items.map(i => [i.label, i.description]), [
+        ['$(repo) api', undefined],
+        ['$(repo) web', undefined],
+        ['$(git-branch) web-feature', 'worktree of web'],
+        ['$(root-folder) notes', 'outside git'],
+      ]);
+      // Ticked: those shown now
+      assert.deepStrictEqual(picker.selectedItems.map(i => i.label), ['$(repo) api', '$(root-folder) notes']);
+      assert.deepStrictEqual(picker.buttons.map(b => b.tooltip), [FOLLOW_SCM_TOOLTIP]);
+      accept(picker.items.filter(i => i.label.endsWith(' web-feature')));
+      await done;
+      assert.deepStrictEqual(await shownProjects(), ['web-feature', 'Workspace']);
+      assert.deepStrictEqual(await shownOrigins(), ['web-feature', 'shop.code-workspace']);
+      assert.strictEqual(api.views.groups.message, CHOSEN_MESSAGE);
+      assert.strictEqual(api.views.tasks.description, 'web-feature');
+    });
+
+    test('the button of Choose Projects follows Source Control again', async () => {
+      await selectRepository('api');
+      await api.projects.choose([scope(api, 'web').id]);
+      const quickPick = fakeQuickPick<vscode.QuickPickItem>();
+      const done = vscode.commands.executeCommand('run-my-tasks.chooseProjects');
+      const { picker, trigger } = await quickPick.shown();
+      assert.deepStrictEqual(picker.selectedItems.map(i => i.label), ['$(repo) web']);
+      trigger(picker.buttons[0]);
+      await done;
+      assert.strictEqual(api.projects.mode, 'scm');
+      assert.deepStrictEqual(await shownProjects(), ['api', 'notes', 'Workspace']);
+    });
+
+    test('Choose Projects with every project ticked, or none, shows them all; Escape changes nothing', async () => {
+      await selectRepository('api');
+      const answer = async (act: (pick: Awaited<ReturnType<ReturnType<typeof fakeQuickPick>['shown']>>) => void) => {
+        const quickPick = fakeQuickPick<vscode.QuickPickItem>();
+        const done = vscode.commands.executeCommand('run-my-tasks.chooseProjects');
+        act(await quickPick.shown());
+        await done;
+        restoreStubs();
+      };
+      await answer(({ picker, accept }) => accept(picker.items));
+      assert.strictEqual(api.projects.mode, 'all');
+      assert.deepStrictEqual(await shownProjects(), ['api', 'web', 'web-feature', 'notes', 'Workspace']);
+      assert.strictEqual(api.views.groups.message, undefined);
+      assert.strictEqual(api.views.groups.description, undefined);
+
+      await api.projects.choose([scope(api, 'web').id]);
+      await answer(({ accept }) => accept([]));
+      assert.strictEqual(api.projects.mode, 'all');
+
+      await api.projects.choose([scope(api, 'web').id]);
+      await answer(({ hide }) => hide());
+      assert.deepStrictEqual(api.projects.choice, [scope(api, 'web').id]);
+    });
+
+    test('with runMyTasks.followScmSelection off, Choose Projects has no button to follow Source Control', async () => {
+      await followScmSelection(false);
+      const quickPick = fakeQuickPick<vscode.QuickPickItem>();
+      const done = vscode.commands.executeCommand('run-my-tasks.chooseProjects');
+      const { picker, hide } = await quickPick.shown();
+      assert.deepStrictEqual(picker.buttons, []);
+      assert.strictEqual(picker.selectedItems.length, 4);
+      hide();
+      await done;
     });
   });
 
@@ -254,54 +366,71 @@ suite('Source Control selection', () => {
       assert.ok(selection.isFolderShown(folder('web')));
     });
 
-    const shown = () => ['api', 'web', 'web-feature', 'notes'].filter(name => selection.isFolderShown(folder(name)));
+    // The choice over the fake git, its state kept in `state`
+    const projectChoice = (state = memoryMemento()) => new ProjectChoice(state, selection, () => api.shared.scopes);
+    const shownBy = (choice: ProjectChoice) =>
+      ['api', 'web', 'web-feature', 'notes'].filter(name => choice.isFolderShown(folder(name)));
 
-    test('the repositories chosen with Show in Run My Tasks are shown until another one becomes active', () => {
+    test('the projects chosen are shown whatever is selected in Source Control, and in the next window', async () => {
+      const state = memoryMemento();
+      const choice = projectChoice(state);
       let changes = 0;
-      selection.onDidChange(() => changes++);
-      repos.web.select(true);
-      selection.choose([repos.web.rootUri, repos.feature.rootUri]);
+      choice.onDidChange(() => changes++);
+      repos.api.select(true);
+      assert.strictEqual(changes, 1);
+      assert.deepStrictEqual(shownBy(choice), ['api', 'notes']);
+
+      await choice.choose([scope(api, 'web').id, scope(api, 'web-feature').id]);
       assert.strictEqual(changes, 2);
-      assert.deepStrictEqual(shown(), ['web', 'web-feature', 'notes']);
-      assert.ok(selection.isScopeShown(scope(api, 'web')));
-      assert.ok(selection.isScopeShown(scope(api, 'web-feature')));
-      assert.ok(!selection.isScopeShown(scope(api, 'api')));
+      assert.strictEqual(choice.mode, 'chosen');
+      assert.deepStrictEqual(shownBy(choice), ['web', 'web-feature']);
+      assert.ok(choice.isScopeShown(scope(api, 'Workspace')));
+      assert.ok(!choice.isScopeShown(scope(api, 'notes')));
+      repos.api.select(false);
+      repos.web.select(true);
+      assert.deepStrictEqual(shownBy(choice), ['web', 'web-feature']);
 
-      // The active repository moving among them keeps them
-      repos.web.select(false);
-      repos.feature.select(true);
-      assert.deepStrictEqual(shown(), ['web', 'web-feature', 'notes']);
+      // Saved in the state of the workspace
+      assert.deepStrictEqual(state.get(CHOSEN_PROJECTS_KEY), [scope(api, 'web').id, scope(api, 'web-feature').id]);
+      assert.deepStrictEqual(shownBy(projectChoice(state)), ['web', 'web-feature']);
 
-      // Another one: the views follow it again
-      repos.feature.select(false);
-      repos.api.select(true);
-      assert.deepStrictEqual(shown(), ['api', 'notes']);
+      await choice.choose('all');
+      assert.deepStrictEqual(shownBy(choice), ['api', 'web', 'web-feature', 'notes']);
+      await choice.choose(undefined);
+      assert.strictEqual(choice.mode, 'scm');
+      assert.deepStrictEqual(shownBy(choice), ['web', 'notes']);
+      assert.strictEqual(state.get(CHOSEN_PROJECTS_KEY), undefined);
     });
 
-    test('a chosen repository closed is no longer shown; with none left, the active one is', async () => {
-      const git = fakeGit(Object.values(repos));
-      selection.dispose();
-      selection = await connect(git);
-      repos.api.select(true);
-      selection.choose([repos.web.rootUri, repos.feature.rootUri]);
-      git.closed.fire(repos.feature);
-      assert.deepStrictEqual(shown(), ['web', 'notes']);
-      git.closed.fire(repos.web);
-      assert.deepStrictEqual(shown(), ['api', 'notes']);
+    test('Show in Run My Tasks chooses the projects of the repositories of its rows, worktrees included', async () => {
+      const choice = projectChoice();
+      await choice.chooseRepositories([repos.feature.rootUri, repos.api.rootUri]);
+      assert.deepStrictEqual(choice.choice, [scope(api, 'api').id, scope(api, 'web-feature').id]);
+      assert.deepStrictEqual(shownBy(choice), ['api', 'web-feature']);
+      // No row of a project: Source Control is followed again
+      await choice.chooseRepositories([]);
+      assert.strictEqual(choice.mode, 'scm');
     });
 
-    test('choosing no repository follows the active one again', () => {
-      repos.api.select(true);
-      selection.choose([repos.web.rootUri]);
-      assert.deepStrictEqual(shown(), ['web', 'notes']);
-      selection.choose([]);
-      assert.deepStrictEqual(shown(), ['api', 'notes']);
+    test('projects chosen and gone from the workspace are left out; with none left Source Control is followed', async () => {
+      const state = memoryMemento();
+      await state.update(CHOSEN_PROJECTS_KEY, ['folder:gone', scope(api, 'web').id]);
+      const choice = projectChoice(state);
+      assert.deepStrictEqual(choice.choice, [scope(api, 'web').id]);
+      await state.update(CHOSEN_PROJECTS_KEY, ['folder:gone']);
+      assert.strictEqual(choice.mode, 'scm');
+      // Not a list of ids: ignored
+      await state.update(CHOSEN_PROJECTS_KEY, 42);
+      assert.strictEqual(choice.mode, 'scm');
     });
 
-    test('with the setting off the chosen repositories are ignored', () => {
-      selection.choose([repos.web.rootUri]);
+    test('with the setting off the projects chosen are still shown', async () => {
+      const choice = projectChoice();
+      repos.api.select(true);
       withSettings({ followScmSelection: false });
-      assert.deepStrictEqual(shown(), ['api', 'web', 'web-feature', 'notes']);
+      assert.deepStrictEqual(shownBy(choice), ['api', 'web', 'web-feature', 'notes']);
+      await choice.choose([scope(api, 'notes').id]);
+      assert.deepStrictEqual(shownBy(choice), ['notes']);
     });
 
     test('with git disabled or missing every folder is shown', async () => {

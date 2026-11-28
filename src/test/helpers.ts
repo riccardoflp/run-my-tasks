@@ -194,3 +194,58 @@ export function fakeInputBox(): { box: vscode.InputBox; type(value: string): voi
     accept: () => accepted.fire(),
   };
 }
+
+export interface FakeQuickPick<T extends vscode.QuickPickItem> {
+  readonly picker: vscode.QuickPick<T>;
+  // Ticks these items and presses Enter
+  accept(items: readonly T[]): void;
+  // Clicks a button of the title
+  trigger(button: vscode.QuickInputButton): void;
+  // Escape
+  hide(): void;
+}
+
+// Replaces createQuickPick with a fake the test answers; `shown()` waits for the picker to be shown
+export function fakeQuickPick<T extends vscode.QuickPickItem>(): { shown(): Promise<FakeQuickPick<T>> } {
+  let shown: FakeQuickPick<T> | undefined;
+  stub(vscode.window, 'createQuickPick', (() => {
+    const accepted = new vscode.EventEmitter<void>();
+    const hidden = new vscode.EventEmitter<void>();
+    const triggered = new vscode.EventEmitter<vscode.QuickInputButton>();
+    const picker = {
+      items: [] as readonly T[],
+      selectedItems: [] as readonly T[],
+      buttons: [] as readonly vscode.QuickInputButton[],
+      onDidAccept: accepted.event,
+      onDidHide: hidden.event,
+      onDidTriggerButton: triggered.event,
+      show: () => {
+        shown = {
+          picker: picker as unknown as vscode.QuickPick<T>,
+          accept: items => {
+            picker.selectedItems = items;
+            accepted.fire();
+          },
+          trigger: button => triggered.fire(button),
+          hide: () => hidden.fire(),
+        };
+      },
+      hide: () => hidden.fire(),
+      dispose: () => undefined,
+    };
+    return picker;
+  }) as unknown as typeof vscode.window.createQuickPick);
+  return { shown: () => waitFor(() => shown, 'the picker to be shown') };
+}
+
+// A Memento kept in memory, for the state of a workspace
+export function memoryMemento(): vscode.Memento {
+  const values = new Map<string, unknown>();
+  return {
+    keys: () => [...values.keys()],
+    get: <T>(key: string, fallback?: T) => (values.has(key) ? values.get(key) as T : fallback),
+    update: async (key: string, value: unknown) => {
+      if (value === undefined) { values.delete(key); } else { values.set(key, value); }
+    },
+  } as vscode.Memento;
+}
