@@ -3,7 +3,7 @@ import { ExtensionApi } from '../../extension';
 import { GroupScope } from '../../projects';
 import { setGroups, VirtualGroup } from '../../taskTreeProvider';
 import { FOLLOW_SCM_SETTING, GitApi, GitExtension, GitRepository } from '../../scmSelection';
-import { waitFor } from '../helpers';
+import { saveGroups as saveGroupsOf, waitFor } from '../helpers';
 
 // The workspace of the multi-root tests, built by test-fixtures/multiroot.mjs: the projects api (a repository),
 // web (a repository and its worktree web-feature) and notes (outside git), and the tasks of shop.code-workspace
@@ -80,22 +80,9 @@ export async function followScmSelection(value: boolean | undefined): Promise<vo
   );
 }
 
-/**
- * Saves the groups of the scope, and waits until they stay saved. Right after a write VS Code may hand the
- * extension the globalState as it was before it, for a moment: a write of the groups of another repository
- * made meanwhile would write the old groups of this one back.
- */
+// Saves the groups of the scope, and waits until they stay saved (see helpers.ts)
 export async function saveGroups(api: ExtensionApi, scope: GroupScope, groups: VirtualGroup[]): Promise<void> {
-  const expected = JSON.stringify(groups);
-  let steady = 0;
-  await waitFor(async () => {
-    if (JSON.stringify(api.loadGroups(scope)) !== expected) {
-      steady = 0;
-      await api.saveGroups(groups, scope);
-      return false;
-    }
-    return ++steady >= 3;
-  }, `the groups of ${scope.label} to be saved`);
+  await saveGroupsOf(api, groups, scope);
 }
 
 // Every project without groups, waiting as saveGroups does

@@ -22,6 +22,7 @@ import {
   pick,
   restoreStubs,
   runningNames,
+  saveGroups,
   stopAllDebugSessions,
   stopAllTasks,
   stub,
@@ -42,7 +43,7 @@ suite('Launch configurations', () => {
 
   suiteSetup(async () => { api = await getApi(); });
 
-  setup(() => api.saveGroups([]));
+  setup(() => saveGroups(api, []));
 
   teardown(async () => {
     restoreStubs();
@@ -189,7 +190,7 @@ suite('Launch configurations', () => {
     });
 
     test('runGroup starts the tasks and the configurations that are not already running', async () => {
-      await api.saveGroups([{ name: 'Dev', tasks: ['long-running'], launches: ['debug-idle', 'debug-idle-2'] }]);
+      await saveGroups(api, [{ name: 'Dev', tasks: ['long-running'], launches: ['debug-idle', 'debug-idle-2'] }]);
       await vscode.debug.startDebugging(getLaunch('debug-idle').folder, 'debug-idle');
       await waitForDebugging('debug-idle');
 
@@ -207,7 +208,7 @@ suite('Launch configurations', () => {
     });
 
     test('stopGroup stops the tasks and the configurations of the group only', async () => {
-      await api.saveGroups([{ name: 'Dev', tasks: ['long-running'], launches: ['debug-idle'] }]);
+      await saveGroups(api, [{ name: 'Dev', tasks: ['long-running'], launches: ['debug-idle'] }]);
       await run('runGroup', new VirtualGroupItem(groupsOf(api.shared)[0], 0));
       await vscode.debug.startDebugging(getLaunch('debug-idle-2').folder, 'debug-idle-2');
       await waitForRunning('long-running');

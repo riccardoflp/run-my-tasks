@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { ExtensionApi } from '../extension';
 import { getLaunchConfigs, LaunchConfig, runningLaunchNames } from '../launchConfigs';
+import { GroupScope } from '../projects';
+import { VirtualGroup } from '../taskTreeProvider';
 
 export async function waitFor<T>(
   probe: () => T | undefined | false | Promise<T | undefined | false>,
@@ -14,6 +16,24 @@ export async function waitFor<T>(
     if (Date.now() > deadline) { throw new Error(`Timed out waiting for ${what}`); }
     await new Promise(r => setTimeout(r, 100));
   }
+}
+
+/**
+ * Saves the groups of the scope (the only one of a single-folder window by default), and waits until they stay
+ * saved. Right after a write VS Code may hand the extension the globalState as it was before it, for a moment: a
+ * command reading the groups then would work on the old ones, and write them back.
+ */
+export async function saveGroups(api: ExtensionApi, groups: VirtualGroup[], scope: GroupScope = api.shared.scopes[0]): Promise<void> {
+  const expected = JSON.stringify(groups);
+  let steady = 0;
+  await waitFor(async () => {
+    if (JSON.stringify(api.loadGroups(scope)) !== expected) {
+      steady = 0;
+      await api.saveGroups(groups, scope);
+      return false;
+    }
+    return ++steady >= 3;
+  }, `the groups of ${scope.label} to be saved`);
 }
 
 export async function getTask(name: string): Promise<vscode.Task> {

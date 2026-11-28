@@ -18,6 +18,7 @@ import {
   pick,
   pickMany,
   restoreStubs,
+  saveGroups,
 } from './helpers';
 
 const run = (command: string, ...args: unknown[]) =>
@@ -32,7 +33,7 @@ suite('Group commands', () => {
   suiteSetup(async () => { api = await getApi(); });
 
   async function given(state: VirtualGroup[]): Promise<void> {
-    await api.saveGroups(state);
+    await saveGroups(api, state);
   }
 
   setup(() => given([]));

@@ -13,6 +13,7 @@ import {
   pick,
   restoreStubs,
   runningNames,
+  saveGroups,
   stopAllTasks,
   stub,
   waitFor,
@@ -28,7 +29,7 @@ suite('Task commands', () => {
   suiteSetup(async () => { api = await getApi(); });
 
   setup(async () => {
-    await api.saveGroups([]);
+    await saveGroups(api, []);
     api.shared.pendingStop.clear();
   });
 
@@ -104,7 +105,7 @@ suite('Task commands', () => {
 
   suite('runGroup', () => {
     test('starts every task of the group that is not already running', async () => {
-      await api.saveGroups([
+      await saveGroups(api, [
         { name: 'Dev', tasks: ['long-running', 'long-running-2'] },
         { name: 'Other', tasks: ['quick'] },
       ]);
@@ -124,7 +125,7 @@ suite('Task commands', () => {
     });
 
     test('starts the tasks in the order of the group', async () => {
-      await api.saveGroups([{ name: 'Dev', tasks: ['long-running-2', 'quick', 'long-running'] }]);
+      await saveGroups(api, [{ name: 'Dev', tasks: ['long-running-2', 'quick', 'long-running'] }]);
       const started: string[] = [];
       const executeTask = vscode.tasks.executeTask;
       stub(vscode.tasks, 'executeTask', (task: vscode.Task) => {
@@ -136,7 +137,7 @@ suite('Task commands', () => {
     });
 
     test('a task failing to start does not stop the others', async () => {
-      await api.saveGroups([{ name: 'Dev', tasks: ['quick', 'long-running'] }]);
+      await saveGroups(api, [{ name: 'Dev', tasks: ['quick', 'long-running'] }]);
       const messages = captureMessages();
       const executeTask = vscode.tasks.executeTask;
       stub(vscode.tasks, 'executeTask', (async (task: vscode.Task) => {
@@ -149,7 +150,7 @@ suite('Task commands', () => {
     });
 
     test('asks which group to run when run from the palette', async () => {
-      await api.saveGroups([{ name: 'Dev', tasks: ['long-running'] }, { name: 'Build', tasks: ['long-running-2'] }]);
+      await saveGroups(api, [{ name: 'Dev', tasks: ['long-running'] }, { name: 'Build', tasks: ['long-running-2'] }]);
       answerQuickPicks(pick('Build'));
       await run('runGroup');
       await waitForRunning('long-running-2');
@@ -165,7 +166,7 @@ suite('Task commands', () => {
 
   suite('stopGroup', () => {
     test('stops only the tasks of the group', async () => {
-      await api.saveGroups([{ name: 'Dev', tasks: ['long-running'] }]);
+      await saveGroups(api, [{ name: 'Dev', tasks: ['long-running'] }]);
       await vscode.tasks.executeTask(await getTask('long-running'));
       await vscode.tasks.executeTask(await getTask('long-running-2'));
       await waitForRunning('long-running');
@@ -178,7 +179,7 @@ suite('Task commands', () => {
     });
 
     test('asks which group to stop when run from the palette', async () => {
-      await api.saveGroups([{ name: 'Dev', tasks: ['long-running'] }]);
+      await saveGroups(api, [{ name: 'Dev', tasks: ['long-running'] }]);
       await vscode.tasks.executeTask(await getTask('long-running'));
       await waitForRunning('long-running');
       answerQuickPicks(pick('Dev'));
