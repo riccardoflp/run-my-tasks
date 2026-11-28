@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-28
+
 ### Added
 
 - **Running** view, on top of the side panel: the tasks running, whoever started them, and the launch configurations being debugged, of every project, with their **Stop** buttons and **Stop All**. Its badge counts them, on the Run My Tasks icon of the Activity Bar too
@@ -150,7 +152,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runMyTasks.statusBarPriority` setting to control the button position within its alignment group
 - `runMyTasks.showTaskType` setting to show/hide task source and type detail lines in the picker
 
-[Unreleased]: https://github.com/riccardoflp/run-my-tasks/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/riccardoflp/run-my-tasks/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/riccardoflp/run-my-tasks/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/riccardoflp/run-my-tasks/compare/v0.8.0...v0.8.1
